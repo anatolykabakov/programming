@@ -1,0 +1,64 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build cpp",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "/home/kabakov/dev/programming/cpp/oop/main.cpp",
+                "-o",
+                "/home/kabakov/dev/programming/cpp/oop/executable"
+            ]
+        },
+        {
+            "label": "run cpp",
+            "type": "shell",
+            "command": "/home/kabakov/dev/programming/cpp/oop/executable",
+            "dependsOn": [
+                "build cpp"
+            ]
+        },
+        {
+            "label": "build cmake",
+            "type": "shell",
+            "command": "cmake ..",
+            "options": {
+                "cwd": "/home/kabakov/dev/programming/cpp/oop/build"
+            }
+        },
+        {
+            "label": "make cmake",
+            "type": "shell",
+            "command": "make -j8",
+            "options": {
+                "cwd": "/home/kabakov/dev/programming/cpp/oop/build"
+            },
+            "dependsOn": [
+                "build cmake"
+            ]
+        },
+        {
+            "label": "run cmake",
+            "type": "shell",
+            "command": "./main",
+            "options": {
+                "cwd": "/home/kabakov/dev/programming/cpp/oop/build"
+            },
+            "dependsOn": [
+                "make cmake",
+                "clear build"
+            ]
+        },
+        {
+            "label": "clear build",
+            "type": "shell",
+            "command": "mkdir build; cd build; cmake ..; make; ./main; cd ..; rm -r build",
+            "options": {
+                "cwd": "/home/kabakov/dev/programming/cpp/oop/"
+            }
+        }
+    ]
+}
