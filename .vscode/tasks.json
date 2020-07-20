@@ -57,7 +57,7 @@
             "type": "shell",
             "command": "mkdir build; cd build; cmake ..; make; ./main; cd ..; rm -r build",
             "options": {
-                "cwd": "/home/kabakov/dev/programming/cpp/oop/"
+                "cwd": "/home/kabakov/dev/programming/cpp/"
             }
         }
     ]
