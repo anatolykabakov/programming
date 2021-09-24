@@ -51,6 +51,7 @@ def deikstra(graph, start, end):
                 costs[node] = new_cost
 
         processed.append(minimal_cost_node)
+        print(processed)
         minimal_cost_node = find_node_lowest_cost(costs, processed) 
     return costs
 
@@ -65,5 +66,6 @@ if __name__ == '__main__':
         "g": {}
     }
     result = deikstra(graph, start="a", end="g")
+    # result = deikstra(result, start="a", end="g")
     print(result)
     
