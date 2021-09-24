@@ -19,13 +19,16 @@
 def width_search(graph, start, end):
     quene = []
     quene.append(start)
+    path = []
 
     while (len(quene) > 0):
         current = quene.pop()
+        path.append(current)
         if not (graph[current]):
             graph[current] = []
         if (end in graph[current]):
-            return True
+            path.append(end)
+            return path
         else:
             quene = quene + graph[current]
 
