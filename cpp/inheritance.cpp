@@ -41,7 +41,5 @@ int main() {
 
   derived d;
   d.foo(&d);
-	
-  
 }
 

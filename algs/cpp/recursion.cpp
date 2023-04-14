@@ -1,7 +1,6 @@
 
 #include <iostream>
 
-
 int factorial(int i) {
   if (i == 1) {
     return 1;
