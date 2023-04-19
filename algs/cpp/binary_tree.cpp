@@ -1,15 +1,15 @@
 #include <iostream>
-//O(log2n)
+// O(log2n)
 
 struct Node {
-  Node *left;
-  Node *right;
+  Node* left;
+  Node* right;
   int value;
   Node(int x) : value{x}, left{nullptr}, right{nullptr} {}
 };
 
 class BinaryTree {
-public: 
+public:
   BinaryTree() : root_{nullptr} {}
 
   void add(int value) {
@@ -18,7 +18,7 @@ public:
       return;
     }
 
-    Node *node = root_;
+    Node* node = root_;
 
     while (node) {
       if (value > node->value && node->right) {
@@ -27,7 +27,7 @@ public:
         node = node->left;
       } else {
         break;
-      } 
+      }
     }
 
     if (value > node->value) {
@@ -37,9 +37,9 @@ public:
     }
   }
 
-  Node * root() {return root_;}
+  Node* root() { return root_; }
 
-  void print(Node *node) {
+  void print(Node* node) {
     if (node == nullptr) {
       return;
     }
@@ -49,11 +49,8 @@ public:
   }
 
 private:
- Node *root_;
+  Node* root_;
 };
-
-
-
 
 int main() {
   BinaryTree bt;

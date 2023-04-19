@@ -3,9 +3,7 @@
 #include <vector>
 #include <cmath>
 
-
-int binary_search(const std::vector<int> &array, int item) {
-  
+int binary_search(const std::vector<int>& array, int item) {
   int start = 0;
   int end = array.size() - 1;
 
@@ -13,7 +11,7 @@ int binary_search(const std::vector<int> &array, int item) {
   while (!found && start <= end) {
     int middle = std::floor((end + start) / 2);
 
-    if(array[middle] == item) {
+    if (array[middle] == item) {
       return middle;
     }
 
@@ -25,7 +23,7 @@ int binary_search(const std::vector<int> &array, int item) {
   }
 }
 
-int resursive_binary_search(const std::vector<int> &array, int item , int start, int stop) {
+int resursive_binary_search(const std::vector<int>& array, int item, int start, int stop) {
   if (start <= stop) {
     return item;
   }
@@ -44,7 +42,6 @@ int resursive_binary_search(const std::vector<int> &array, int item , int start,
 }
 
 int main() {
-
   std::vector<int> array = {0, 1, 2, 3, 4, 5};
 
   std::cout << binary_search(array, 1) << std::endl;

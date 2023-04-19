@@ -1,8 +1,8 @@
 #include <iostream>
 #include <vector>
 
-//O(log2n)
-std::vector<int> quicksort(const std::vector<int> &array) {
+// O(log2n)
+std::vector<int> quicksort(const std::vector<int>& array) {
   if (array.size() <= 1) {
     return array;
   }
@@ -10,7 +10,7 @@ std::vector<int> quicksort(const std::vector<int> &array) {
   auto pivot = array[middle];
   std::vector<int> greater;
   std::vector<int> less;
-  for (const auto& item: array) {
+  for (const auto& item : array) {
     if (pivot == item) {
       continue;
     }
@@ -36,7 +36,7 @@ std::vector<int> quicksort(const std::vector<int> &array) {
 int main() {
   std::vector<int> arr = {0, 3, 2, 5, 6, 8, 1, 9, 4, 2, 1, 2, 9, 6, 4, 1, 7, -1, -5, 23, 6, 2, 35, 6, 3, 32};
   auto sorted = quicksort(arr);
-  for (auto&item: sorted) {
+  for (auto& item : sorted) {
     std::cout << item << std::endl;
   }
   return 0;

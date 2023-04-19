@@ -1,5 +1,3 @@
 #include "circle.h"
 #include <iostream>
-namespace figures {
-
-}
+namespace figures {}

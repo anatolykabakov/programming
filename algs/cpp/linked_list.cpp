@@ -3,21 +3,21 @@
 struct Node {
   Node* next;
   int value;
-  Node(int x): value{x}, next{nullptr} {}
+  Node(int x) : value{x}, next{nullptr} {}
 };
 
 class LinkedList {
 public:
-  LinkedList(): size_(0), root_{nullptr} {}
+  LinkedList() : size_(0), root_{nullptr} {}
 
   void add(int value) {
     if (root_ == nullptr) {
       root_ = new Node(value);
-      size_ =+ 1;
+      size_ = +1;
       return;
     }
 
-    Node *node = root_;
+    Node* node = root_;
     while (node->next != nullptr) {
       node = node->next;
     }
@@ -26,10 +26,10 @@ public:
     size_ += 1;
   }
 
-  int size() {return size_; }
+  int size() { return size_; }
 
   void print() {
-    Node *node = root_;
+    Node* node = root_;
     std::cout << node->value << std::endl;
     while (node->next != nullptr) {
       node = node->next;
@@ -38,7 +38,7 @@ public:
   }
 
 private:
-  Node *root_;
+  Node* root_;
   int size_;
 };
 

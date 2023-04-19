@@ -1,3 +1,1 @@
-namespace figures {
-
-}
+namespace figures {}

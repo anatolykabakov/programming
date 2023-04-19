@@ -1,25 +1,20 @@
-#include<iostream>
+#include <iostream>
 
-
-template<typename T>
+template <typename T>
 struct foo {
-  foo(T arg) {
-    std::cout << "__func__" << std::endl;
-  }
+  foo(T arg) { std::cout << "__func__" << std::endl; }
 };
 
-template<>
+template <>
 struct foo<bool> {
-  foo(bool arg) {
-    std::cout << "specialization __func__" << std::endl;
-  }
+  foo(bool arg) { std::cout << "specialization __func__" << std::endl; }
 };
 
 template <typename T>
 void swap(T& a, T& b) {
-	T tmp = a;
-	a = b;
-	b = tmp;
+  T tmp = a;
+  a = b;
+  b = tmp;
 }
 
 struct A {
@@ -33,14 +28,14 @@ int main() {
   foo<double> b(0.0);
   foo<bool> c(true);
 
-  auto p = &swap<int>; 
-  auto q = &swap<char>; 
+  auto p = &swap<int>;
+  auto q = &swap<char>;
 
   std::cout << "bool " << sizeof(true) << std::endl;
-  std::cout << "double " <<sizeof(0.0) << std::endl;
-  std::cout << "int " <<sizeof(1) << std::endl;
-  std::cout << "float " <<sizeof(0.0f) << std::endl;
-  std::cout << "void* " <<sizeof(void*) << std::endl;
-  std::cout << "A " <<sizeof(A) << std::endl;
+  std::cout << "double " << sizeof(0.0) << std::endl;
+  std::cout << "int " << sizeof(1) << std::endl;
+  std::cout << "float " << sizeof(0.0f) << std::endl;
+  std::cout << "void* " << sizeof(void*) << std::endl;
+  std::cout << "A " << sizeof(A) << std::endl;
   return 0;
 }

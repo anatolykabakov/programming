@@ -1,8 +1,6 @@
-
-
 """
-Поиск в ширину -- алгоритм поиска кратчайшего пути из вершины в вершину.  
-Описание: 
+Поиск в ширину -- алгоритм поиска кратчайшего пути из вершины в вершину.
+Описание:
 1. Создаем таблицу стоимости пути из вершины в вершину
 2. Создаем список вершин, которые обошли
 3. Создаем список соседних вершин
@@ -15,6 +13,7 @@
 
 Сложность алгоритма O(n*n)
 """
+
 
 def find_node_lowest_cost(costs, processed):
     """
@@ -36,7 +35,7 @@ def dijkstra(graph, start, end):
     processed = []
     neighbord = {}
     for node in graph.keys():
-        if (node != start):
+        if node != start:
             cost = 1000000
         else:
             cost = 0
@@ -46,23 +45,23 @@ def dijkstra(graph, start, end):
     minimal_cost_node = start
     path[minimal_cost_node] = [start]
 
-
-    while(minimal_cost_node):
+    while minimal_cost_node:
         if minimal_cost_node == end:
             break
         cost = costs[minimal_cost_node]
         neighbord = graph[minimal_cost_node]
         for node in neighbord.keys():
             new_cost = cost + neighbord[node]
-            if (new_cost < costs[node]):
+            if new_cost < costs[node]:
                 costs[node] = new_cost
                 path[node] = path[minimal_cost_node] + [node]
-        
+
         processed.append(minimal_cost_node)
-        minimal_cost_node = find_node_lowest_cost(costs, processed) 
+        minimal_cost_node = find_node_lowest_cost(costs, processed)
     return path[end]
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     graph = {
         "a": {"b": 2, "c": 1},
         "b": {"f": 7},
@@ -70,8 +69,7 @@ if __name__ == '__main__':
         "d": {"f": 2},
         "e": {"f": 1},
         "f": {"g": 1},
-        "g": {}
+        "g": {},
     }
     result = dijkstra(graph, start="a", end="g")
     print(result)
-    

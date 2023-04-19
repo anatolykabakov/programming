@@ -1,8 +1,6 @@
-
-
 """
 Бинарный поиск -- алгоритм поиска элемента или индекса элемента в последовательности чисел
-Описание: 
+Описание:
 1. Принимаем на вход отсортированную последовательность чисел
 2. Находим серединный элемент
 3. Создаем массив элементов, которые больше серединного, меньше и равны.
@@ -15,8 +13,9 @@
 """
 from math import floor
 
+
 def bynary_search(arr, number):
-    count = 0 # счетчик для оценки сложности
+    count = 0  # счетчик для оценки сложности
     start = 0
     end = len(arr)
     middle = None
@@ -24,7 +23,7 @@ def bynary_search(arr, number):
     position = -1
     count = 0
 
-    while(found == False and start <= end):
+    while not found and start <= end:
         count += 1
         middle = floor((start + end) / 2)
 
@@ -32,13 +31,14 @@ def bynary_search(arr, number):
             found = True
             position = middle
             return position, count
-        if (number < arr[middle]):
-            end = middle 
+        if number < arr[middle]:
+            end = middle
         else:
             start = middle
 
-if __name__ == '__main__':
-    arr = [1,2,3,4,5,6,7,8,9]
+
+if __name__ == "__main__":
+    arr = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     number = 7
     index, count = bynary_search(arr, number)
     print("index: {}, iterations: {}".format(index, count))

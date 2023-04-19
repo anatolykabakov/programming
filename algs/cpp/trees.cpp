@@ -7,12 +7,11 @@ struct Node {
   std::vector<Node> childs;
 };
 
-int sum_iterative(Node &node) {
+int sum_iterative(Node& node) {
   int sum = 0;
   std::stack<Node> nodes;
   nodes.push(node);
-  while (!nodes.empty())
-  {
+  while (!nodes.empty()) {
     auto curr = nodes.top();
     nodes.pop();
     std::cout << curr.value << std::endl;
@@ -25,7 +24,7 @@ int sum_iterative(Node &node) {
   return sum;
 }
 
-int sum_recursive(Node &node) {
+int sum_recursive(Node& node) {
   if (node.childs.empty()) {
     return node.value;
   }
@@ -52,7 +51,7 @@ int main() {
 
   Node level2_node1;
   level2_node1.value = 5;
-  
+
   Node level2_node2;
   level2_node2.value = 5;
   Node level2_node3;
@@ -75,14 +74,14 @@ int main() {
 
   Node level3_node3;
   level3_node3.value = 5;
-  
+
   level2_node1.childs.push_back(level3_node1);
   level2_node1.childs.push_back(level3_node2);
 
   level2_node7.childs.push_back(level3_node3);
 
   level1_node1.childs.push_back(level2_node1);
-  
+
   level1_node2.childs.push_back(level2_node2);
   level1_node2.childs.push_back(level2_node3);
   level1_node2.childs.push_back(level2_node4);
@@ -96,9 +95,9 @@ int main() {
   root.childs.push_back(level1_node2);
   root.childs.push_back(level1_node3);
   root.childs.push_back(level1_node4);
-  
+
   std::cout << "sum_iterative " << sum_iterative(root) << std::endl;
   std::cout << "sum_recursive " << sum_recursive(root) << std::endl;
-  
+
   return 0;
 }

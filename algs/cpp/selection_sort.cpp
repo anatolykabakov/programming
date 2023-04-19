@@ -3,8 +3,7 @@
 #include <vector>
 #include <cmath>
 
-
-void selection_sort(std::vector<int> &array) {
+void selection_sort(std::vector<int>& array) {
   for (int i = 0; i < array.size(); ++i) {
     for (int j = i + 1; j < array.size(); ++j) {
       if (array[j] < array[i]) {
@@ -17,11 +16,10 @@ void selection_sort(std::vector<int> &array) {
 }
 
 int main() {
-
   std::vector<int> array = {0, 3, 2, 1, 4, 5};
 
   selection_sort(array);
-  for (const auto& item: array) {
+  for (const auto& item : array) {
     std::cout << item << std::endl;
   }
 
