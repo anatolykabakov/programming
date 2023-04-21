@@ -12,5 +12,8 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-add_executable (map_updater map_updater.cpp)
-target_link_libraries (map_updater ${PCL_LIBRARIES})
+add_executable(
+  map_updater
+  map_updater.cpp
+)
+target_link_libraries(map_updater ${PCL_LIBRARIES})
