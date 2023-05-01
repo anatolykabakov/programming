@@ -21,7 +21,7 @@ public:
 
   int root_id() const { return root_id_; }
 
-  std::vector<std::pair<int, int>> connected_vertices(int i) const { return adj_list_[i]; }
+  std::vector<std::pair<int, int>> neighbors(int i) const { return adj_list_[i]; }
 
 private:
   std::vector<std::vector<std::pair<int, int>>> adj_list_;
@@ -48,7 +48,7 @@ bool breadth_first_search(const Graph& graph, int start, int stop) {
       return true;
     }
 
-    for (const auto& [v_id, w] : graph.connected_vertices(current_v_id)) {
+    for (const auto& [v_id, w] : graph.neighbors(current_v_id)) {
       if (!visited[v_id]) {
         not_visited.push(v_id);
       }
@@ -76,7 +76,7 @@ bool depth_first_search(const Graph& graph, int start, int stop) {
       return true;
     }
 
-    for (const auto& [v_id, w] : graph.connected_vertices(current_v_id)) {
+    for (const auto& [v_id, w] : graph.neighbors(current_v_id)) {
       if (!visited[v_id]) {
         nodes.push(v_id);
       }
@@ -86,48 +86,49 @@ bool depth_first_search(const Graph& graph, int start, int stop) {
   return false;
 }
 
-bool dijkstra_search(const Graph& graph, int start, int stop) {
-  std::vector<int> costs(graph.num_vertices(), 1000000000);
-  std::vector<bool> visited(graph.num_vertices(), false);
-  std::queue<int> queue;
+bool dijkstra(const Graph& g, int start, int stop) {
+  std::vector<bool> visited(g.num_vertices(), false);
+  std::vector<int> costs(g.num_vertices(), 1000);
+  std::queue<int> q;
+  q.push(g.root_id());
+  costs[g.root_id()] = 0;
 
-  queue.push(start);
-  costs[start] = 0;
+  while (!q.empty()) {
+    int node = q.front();
+    q.pop();
+    visited[node] = true;
+    int cost = costs[node];
+    std::cout << "current vertex id " << node << std::endl;
 
-  while (!queue.empty()) {
-    int node_id = queue.front();
-    queue.pop();
-    visited[node_id] = true;
-    std::cout << "current vertex id " << node_id << std::endl;
-    int node_cost = costs[node_id];
-
-    if (node_id == stop) {
-      std::cout << "path from " << start << " to " << stop << " found with cost " << node_cost << std::endl;
+    if (node == stop) {
       return true;
     }
 
-    for (const auto& [id, w] : graph.connected_vertices(node_id)) {
-      int new_cost = node_cost + w;
-      if (new_cost < costs[id]) {
-        costs[id] = new_cost;
+    // update neighbors costs
+    for (const auto& [id, weight] : g.neighbors(node)) {
+      int cost_from_start_to_neighbour = cost + weight;
+      if (cost_from_start_to_neighbour < costs[id]) {
+        costs[id] = cost_from_start_to_neighbour;
       }
     }
 
-    int min_cost_node_id = 0;
-    int lowest_cost = 1000000000;
-    bool lowest_cost_node_found = false;
+    // find node with lowerst cost and not visited
+    int min_cost = 1000;
+    int lowerst_cost_node_id = 0;
+    bool found = false;
     for (int i = 0; i < costs.size(); ++i) {
-      int node_cost = costs[i];
-      if (node_cost < lowest_cost && !visited[i]) {
-        min_cost_node_id = i;
-        lowest_cost = node_cost;
-        lowest_cost_node_found = true;
+      if (min_cost > costs[i] && !visited[i]) {
+        min_cost = costs[i];
+        found = true;
+        lowerst_cost_node_id = i;
       }
     }
-    if (lowest_cost_node_found) {
-      queue.push(min_cost_node_id);
+
+    if (found) {
+      q.push(lowerst_cost_node_id);
     }
   }
+
   return false;
 }
 
@@ -142,7 +143,7 @@ int main() {
   g.add_edge(4, 5, 1);  // E->F 1
   g.add_edge(5, 6, 1);  // F->G 1
 
-  std::cout << "dijkstra_test: " << dijkstra_search(g, 0, 6) << std::endl;
+  dijkstra(g, 0, 6);
   std::cout << "breadth_first_search: " << breadth_first_search(g, 0, 6) << std::endl;
   std::cout << "depth_first_search: " << depth_first_search(g, 0, 6) << std::endl;
   return 0;

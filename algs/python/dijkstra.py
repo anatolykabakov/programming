@@ -33,7 +33,7 @@ def dijkstra(graph, start, end):
     path = {}
     costs = {}
     processed = []
-    neighbord = {}
+    neighbors = {}
     for node in graph.keys():
         if node != start:
             cost = 1000000
@@ -49,9 +49,9 @@ def dijkstra(graph, start, end):
         if minimal_cost_node == end:
             break
         cost = costs[minimal_cost_node]
-        neighbord = graph[minimal_cost_node]
-        for node in neighbord.keys():
-            new_cost = cost + neighbord[node]
+        neighbors = graph[minimal_cost_node]
+        for node in neighbors.keys():
+            new_cost = cost + neighbors[node]
             if new_cost < costs[node]:
                 costs[node] = new_cost
                 path[node] = path[minimal_cost_node] + [node]

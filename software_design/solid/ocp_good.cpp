@@ -16,10 +16,7 @@ struct Item {
 
 enum class PaymentStatus { NotPaid, Paid };
 
-enum class PaymentType {
-  CARD,
-  CASH
-};
+enum class PaymentType { CARD, CASH };
 /*
   Класс обрабатывает единицы товара
   1. добавляет заказ в список
@@ -54,7 +51,7 @@ private:
 */
 
 struct IPayment {
-  virtual void pay(Order order, float money, const std::string &security) = 0;
+  virtual void pay(Order order, float money, const std::string& security) = 0;
   ~IPayment() = default;
 
 protected:
@@ -68,27 +65,31 @@ protected:
 };
 
 struct PaymentDebit : IPayment {
-  void pay(Order order, float money, const std::string &security) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  void pay(Order order, float money,
+           const std::string& security) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     std::cout << "Pay by cash.. Some logic for cash payment this." << std::endl;
     std::cout << "Verify security code: " << security << std::endl;
     enough_money(order, money);
-  }  
+  }
 };
 
 struct PaymentCard : IPayment {
-  void pay(Order order, float money, const std::string &security) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  void pay(Order order, float money,
+           const std::string& security) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     std::cout << "Pay by card.. Some logic for card payment this." << std::endl;
     std::cout << "Verify security code: " << security << std::endl;
     enough_money(order, money);
-  }  
+  }
 };
 
 struct PaymentPayPal : IPayment {
-  void pay(Order order, float money, const std::string &security) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  void pay(Order order, float money,
+           const std::string& security) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     std::cout << "Pay by PayPal.. Some logic for PayPal payment this." << std::endl;
-    std::cout << "Verify email " << security << std::endl; // Violation for the principle of Liscov substitution!!! PayPal does not handle security code
+    std::cout << "Verify email " << security << std::endl;  // Violation for the principle of Liscov substitution!!!
+                                                            // PayPal does not handle security code
     enough_money(order, money);
-  }  
+  }
 };
 
 int main() {

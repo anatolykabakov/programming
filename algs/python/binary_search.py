@@ -14,7 +14,7 @@
 from math import floor
 
 
-def bynary_search(arr, number):
+def binary_search(arr, number):
     count = 0  # счетчик для оценки сложности
     start = 0
     end = len(arr)
@@ -40,5 +40,5 @@ def bynary_search(arr, number):
 if __name__ == "__main__":
     arr = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     number = 7
-    index, count = bynary_search(arr, number)
+    index, count = binary_search(arr, number)
     print("index: {}, iterations: {}".format(index, count))

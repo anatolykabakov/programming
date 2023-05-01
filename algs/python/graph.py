@@ -17,7 +17,7 @@
 """
 
 
-def width_search(graph, start, end):
+def breadth_first_search(graph, start, end):
     quene = []
     quene.append(start)
     path = []
@@ -45,5 +45,5 @@ if __name__ == "__main__":
         "e": ["f"],
         "f": ["g"],
     }
-    result = width_search(graph, start="a", end="g")
+    result = breadth_first_search(graph, start="a", end="g")
     print(result)

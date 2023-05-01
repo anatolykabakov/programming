@@ -47,61 +47,65 @@ protected:
 };
 
 struct SMSAutorizer {
-  SMSAutorizer(): is_autorized_{false} {}
-  void verify(const std::string &code) {
+  SMSAutorizer() : is_autorized_{false} {}
+  void verify(const std::string& code) {
     std::cout << "SMSAutorizer: Verify code" << std::endl;
     std::cout << "SMSAutorizer: autorized!!" << std::endl;
     is_autorized_ = true;
   }
-  bool is_autorizer() {
-    return is_autorized_;
-  }
+  bool is_autorizer() { return is_autorized_; }
 
 private:
   bool is_autorized_;
 };
 
 struct PaymentDebit : IPayment {
-  PaymentDebit(const std::string &security, std::shared_ptr<SMSAutorizer> autorizer): security_(security), autorizer_(autorizer) {}
+  PaymentDebit(const std::string& security, std::shared_ptr<SMSAutorizer> autorizer)
+    : security_(security), autorizer_(autorizer) {}
 
-  void pay(Order order, float money) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  void pay(Order order, float money) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     if (!autorizer_->is_autorizer()) {
       std::cout << "not autorized!" << std::endl;
     }
     std::cout << "Pay by cash.. Some logic for debit payment this." << std::endl;
     std::cout << "Verify security code: " << security_ << std::endl;
     enough_money(order, money);
-  }  
+  }
+
 private:
   std::string security_;
   std::shared_ptr<SMSAutorizer> autorizer_;
 };
 
 struct PaymentCard : IPayment {
-  PaymentCard(const std::string &security, std::shared_ptr<SMSAutorizer> autorizer): security_(security), autorizer_(autorizer) {}
-  
-  void pay(Order order, float money) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  PaymentCard(const std::string& security, std::shared_ptr<SMSAutorizer> autorizer)
+    : security_(security), autorizer_(autorizer) {}
+
+  void pay(Order order, float money) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     if (!autorizer_->is_autorizer()) {
       std::cout << "not autorized!" << std::endl;
     }
     std::cout << "Pay by card.. Some logic for card payment this." << std::endl;
     std::cout << "Verify security code: " << security_ << std::endl;
     enough_money(order, money);
-  }  
+  }
+
 private:
   std::string security_;
   std::shared_ptr<SMSAutorizer> autorizer_;
 };
 
 struct PaymentPayPal : IPayment {
-  PaymentPayPal(const std::string &email): email_(email) {}
+  PaymentPayPal(const std::string& email) : email_(email) {}
 
-  void pay(Order order, float money) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  void pay(Order order, float money) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     std::cout << "Pay by PayPal.. Some logic for PayPal payment this." << std::endl;
-    
-    std::cout << "Verify email " << email_ << std::endl; // Violation for the principle of Liscov substitution!!! PayPal does not handle security code
+
+    std::cout << "Verify email " << email_ << std::endl;  // Violation for the principle of Liscov substitution!!!
+                                                          // PayPal does not handle security code
     enough_money(order, money);
   }
+
 private:
   std::string email_;
 };

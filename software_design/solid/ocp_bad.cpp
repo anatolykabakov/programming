@@ -16,10 +16,7 @@ struct Item {
 
 enum class PaymentStatus { NotPaid, Paid };
 
-enum class PaymentType {
-  CARD,
-  CASH
-};
+enum class PaymentType { CARD, CASH };
 /*
   Класс обрабатывает единицы товара
   1. добавляет заказ в список
@@ -53,8 +50,8 @@ private:
   1. оплачивает заказ
 */
 struct Payment {
-  void pay(Order order, PaymentType type, float money) { // Для добавления нового типа оплаты надо менять код в Payment
-    if (type == PaymentType::CARD) { 
+  void pay(Order order, PaymentType type, float money) {  // Для добавления нового типа оплаты надо менять код в Payment
+    if (type == PaymentType::CARD) {
       enough_money(order, money);
     }
     if (type == PaymentType::CASH) {

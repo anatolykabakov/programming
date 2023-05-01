@@ -16,10 +16,7 @@ struct Item {
 
 enum class PaymentStatus { NotPaid, Paid };
 
-enum class PaymentType {
-  CARD,
-  CASH
-};
+enum class PaymentType { CARD, CASH };
 /*
   Класс обрабатывает единицы товара
   1. добавляет заказ в список
@@ -53,8 +50,6 @@ private:
   1. оплачивает заказ
 */
 
-
-
 struct IPayment {
   virtual void pay(Order order, float money) = 0;
   ~IPayment() = default;
@@ -70,51 +65,51 @@ protected:
 };
 
 struct IPaymentSMS : IPayment {
-  virtual void sms_auth(const std::string &code) = 0;
+  virtual void sms_auth(const std::string& code) = 0;
 };
 
 struct PaymentDebit : IPayment {
-  PaymentDebit(const std::string &security): security_(security) {
-
-  }
-  void pay(Order order, float money) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  PaymentDebit(const std::string& security) : security_(security) {}
+  void pay(Order order, float money) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     std::cout << "Pay by cash.. Some logic for debit payment this." << std::endl;
     std::cout << "Verify security code: " << security_ << std::endl;
     enough_money(order, money);
-  }  
+  }
+
 private:
   std::string security_;
 };
 
 struct PaymentCard : IPaymentSMS {
-  PaymentCard(const std::string &security): security_(security), sms_auth_ok_{false} {
-
-  }
-  void sms_auth(const std::string &code) {
+  PaymentCard(const std::string& security) : security_(security), sms_auth_ok_{false} {}
+  void sms_auth(const std::string& code) {
     std::cout << "Verify sms code: " << code << std::endl;
     sms_auth_ok_ = true;
   }
-  void pay(Order order, float money) override { // Для добавления нового типа оплаты не надо менять код в Payment
-    if (!sms_auth_ok_) {return;}
+  void pay(Order order, float money) override {  // Для добавления нового типа оплаты не надо менять код в Payment
+    if (!sms_auth_ok_) {
+      return;
+    }
     std::cout << "Pay by card.. Some logic for card payment this." << std::endl;
     std::cout << "Verify security code: " << security_ << std::endl;
     enough_money(order, money);
-  }  
+  }
+
 private:
   std::string security_;
   bool sms_auth_ok_;
 };
 
 struct PaymentPayPal : IPayment {
-  PaymentPayPal(const std::string &email): email_(email) {
+  PaymentPayPal(const std::string& email) : email_(email) {}
 
-  }
-
-  void pay(Order order, float money) override { // Для добавления нового типа оплаты не надо менять код в Payment
+  void pay(Order order, float money) override {  // Для добавления нового типа оплаты не надо менять код в Payment
     std::cout << "Pay by PayPal.. Some logic for PayPal payment this." << std::endl;
-    std::cout << "Verify email " << email_ << std::endl; // Violation for the principle of Liscov substitution!!! PayPal does not handle security code
+    std::cout << "Verify email " << email_ << std::endl;  // Violation for the principle of Liscov substitution!!!
+                                                          // PayPal does not handle security code
     enough_money(order, money);
   }
+
 private:
   std::string email_;
 };
