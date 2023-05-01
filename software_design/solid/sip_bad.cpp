@@ -1,6 +1,8 @@
 #include <iostream>
 #include <vector>
 /*
+ ref https://radioprog.ru/post/1420
+
  Задача: необходимо разработать систему продаж.
  Система продаж состоит должна поддерживать функции
   1. Добавить товар в заказ
@@ -17,6 +19,8 @@ struct Item {
   float price;
   int quantity;
 };
+
+enum class PaymentType { CARD, CASH };
 
 /*
   Зона ответственности:
@@ -36,11 +40,13 @@ public:
     }
   }
 
-  void pay(float money) {
+  void pay(float money, PaymentType type, const std::string& security) {
     float total_price = 0;
     for (const auto& item : items) {
       total_price += item.price * item.quantity;
     }
+
+    std::cout << "Verify security code " << security << std::endl;
 
     if (money >= total_price) {
       std::cout << "order payed!" << std::endl;
@@ -58,7 +64,7 @@ int main() {
   order.add(Item{"One", 200.0f, 2});
   order.add(Item{"Two", 300.0f, 1});
   order.print();
-  order.pay(100.0f);
-  order.pay(1000.0f);
+  order.pay(100.0f, PaymentType::CASH, "12345");
+  order.pay(1000.0f, PaymentType::CARD, "12345");
   return 0;
 }

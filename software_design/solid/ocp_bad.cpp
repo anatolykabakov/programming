@@ -16,7 +16,10 @@ struct Item {
 
 enum class PaymentStatus { NotPaid, Paid };
 
-enum class PaymentType { CARD, CASH };
+enum class PaymentType {
+  CARD,
+  CASH
+};
 /*
   Класс обрабатывает единицы товара
   1. добавляет заказ в список
@@ -50,20 +53,22 @@ private:
   1. оплачивает заказ
 */
 struct Payment {
-  void pay(Order order, PaymentType type, float money, const std::string& security) {
-    std::cout << "Verify security code " << security << std::endl;
+  void pay(Order order, PaymentType type, float money) { // Для добавления нового типа оплаты надо менять код в Payment
+    if (type == PaymentType::CARD) { 
+      enough_money(order, money);
+    }
+    if (type == PaymentType::CASH) {
+      enough_money(order, money);
+    }
+  }
+
+  bool enough_money(Order order, float money) {
     if (money >= order.price()) {
       std::cout << "order payed!" << std::endl;
     } else {
       std::cout << "not enouth money!" << std::endl;
     }
   }
-
-  void pay_by_card() { std::cout << __func__ << std::endl; }
-
-  void pay_by_debit() { std::cout << __func__ << std::endl; }
-
-  void pay_by_paypal() { std::cout << __func__ << std::endl; }
 };
 
 int main() {
@@ -72,7 +77,7 @@ int main() {
   order.add(Item{"Two", 300.0f, 1});
   order.print();
   Payment payment;
-  payment.pay(order, PaymentType::CARD, 100.0f, "1234");
-  payment.pay(order, PaymentType::CARD, 1000.0f, "1234");
+  payment.pay(order, PaymentType::CARD, 100.0f);
+  payment.pay(order, PaymentType::CARD, 1000.0f);
   return 0;
 }
