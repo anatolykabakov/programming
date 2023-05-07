@@ -14,77 +14,78 @@ struct ListNode {
 class Solution {
 public:
   void reorderList(ListNode* head) {
-    ListNode* slow = head;
-    ListNode* fast = head->next;
+    if (head->next == NULL) {
+      return;
+    }
 
-    ListNode* prev{nullptr};
-    while (fast && fast->next) {
+    ListNode* prev = NULL;
+    ListNode* slow = head;
+    ListNode* fast = head;
+
+    while (fast != NULL && fast->next != NULL) {
       prev = slow;
       slow = slow->next;
       fast = fast->next->next;
     }
-    // ListNode* tmp = slow->next;
-    ListNode* l2 = reverse(slow->next);  // ok
-    slow->next = nullptr;
+
+    prev->next = NULL;
+
     ListNode* l1 = head;
-    // ListNode* l2 = slow;
+    ListNode* l2 = reverse(slow);
+
     merge(l1, l2);
-    while (l1) {
-      std::cout << l1->val << std::endl;
-      l1 = l1->next;
-    }
-    // std::cout << l2->val << std::endl;
   }
 
-  ListNode* reverse(ListNode* root) {
-    // input: 1 -> 2 -> 3 -> 4 -> null
-    // output: 4 -> 3 -> 2 -> 1 -> null
+private:
+  ListNode* reverse(ListNode* head) {
     ListNode* prev{nullptr};
-    while (root) {
-      ListNode* tmp = root->next;  // 2
-      root->next = prev;           // 1 -> 0
-      prev = root;                 // 1
-      root = tmp;                  // 2
+    ListNode* curr = head;
+    ListNode* next = head->next;
+
+    while (curr) {
+      next = curr->next;
+      curr->next = prev;
+      prev = curr;
+      curr = next;
     }
 
     return prev;
   }
-
   void merge(ListNode* l1, ListNode* l2) {
-    // l1: 1 -> 2 -> 3
-    // l2: 5 -> 4
-    // out: 1 -> 5 -> 2 -> 4 -> 3
+    while (l1) {
+      ListNode* p1 = l1->next;
+      ListNode* p2 = l2->next;
 
-    ListNode* dummy = l1;
+      l1->next = l2;
+      if (p1 == nullptr) {
+        break;
+      }
+      l2->next = p1;
 
-    while (dummy) {
-      ListNode* tmp = dummy->next;  // val 2 next 3
-      dummy->next = l2;             // 1 -> 5 -> 2
-      dummy = tmp;                  // 2
-      l2 = l2->next;
+      l1 = p1;
+      l2 = p2;
     }
   }
 };
 
 int main() {
-  ListNode* root = new ListNode(1);
-  ListNode* one = new ListNode(2);
-  ListNode* two = new ListNode(3);
-  ListNode* three = new ListNode(4);
-  ListNode* four = new ListNode(5);
-  root->next = one;
-  one->next = two;
-  two->next = three;
-  three->next = four;
+  ListNode* n1 = new ListNode(1);
+  ListNode* n2 = new ListNode(2);
+  ListNode* n3 = new ListNode(3);
+  ListNode* n4 = new ListNode(4);
+  ListNode* n5 = new ListNode(5);
+  n1->next = n2;
+  n2->next = n3;
+  n3->next = n4;
+  n4->next = n5;
 
   Solution solution;
-  solution.reorderList(root);
+  solution.reorderList(n1);
 
-  // while (root)
-  // {
-  //   std::cout << root->val << std::endl;
-  //   root = root->next;
-  // }
+  while (n1) {
+    std::cout << n1->val << std::endl;
+    n1 = n1->next;
+  }
 
   return 0;
 }

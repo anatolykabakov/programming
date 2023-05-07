@@ -5,12 +5,12 @@
 int simple_cached_func(std::function<int(int)> f, int arg) {
   static std::unordered_map<int, int> cache;
   if (cache.find(arg) != cache.end()) {
-    std::cout << "cached value " << cache[arg] << std::endl;
+    std::cout << "value from cache " << cache[arg] << std::endl;
     return cache[arg];
   }
   auto result = f(arg);
   cache[arg] = result;
-  std::cout << "value " << result << std::endl;
+  std::cout << "calculated value " << result << std::endl;
   return result;
 }
 

@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 
-// O(log2n)
+// Time O(nlogn), Space O(n)
 std::vector<int> quicksort(const std::vector<int>& array) {
   if (array.size() <= 1) {
     return array;
