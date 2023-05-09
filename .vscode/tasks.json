@@ -5,14 +5,16 @@
   "tasks": [
     {
       "type": "cppbuild",
-      "label": "C/C++: g++-7 build active file",
-      "command": "/usr/bin/g++-7",
+      "label": "C/C++: g++ build active file",
+      "command": "/usr/bin/g++",
       "args": [
         "-fdiagnostics-color=always",
+        "-std=c++17",
         "-g",
         "${file}",
         "-o",
-        "${fileDirname}/${fileBasenameNoExtension}"
+        "${fileDirname}/${fileBasenameNoExtension}",
+        "-lpthread"
       ],
       "options": {
         "cwd": "${fileDirname}"

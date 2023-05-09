@@ -8,7 +8,8 @@ int getVersion() { return 2; }
 }  // namespace Version2
 }  // namespace Program
 int main() {
-  int version{Program::getVersion()};               // Uses getVersion() from Version2
-  int oldVersion{Program::Version1::getVersion()};  // Uses getVersion() from Version1
-  // bool firstVersion {Program::isFirstVersion()};    // Does not compile when Version2 is added
+    int version{Program::getVersion()};               // Uses getVersion() from Version2
+    int oldVersion{Program::Version1::getVersion()};  // Uses getVersion() from Version1
+    // bool firstVersion {Program::isFirstVersion()};    // Does not compile when Version2
+    // is added
 }
