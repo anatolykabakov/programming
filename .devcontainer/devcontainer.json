@@ -12,7 +12,7 @@
     "ms-vscode.cpptools-extension-pack",
     "ms-python.python",
     "ms-iot.vscode-ros@0.8.0"
-  ],
+  ]
 
-  "initializeCommand": "xhost +local:docker"
+  //"initializeCommand": "xhost +local:docker"
 }
