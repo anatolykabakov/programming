@@ -3,9 +3,7 @@
 
 [[noreturn]] void f() { throw std::logic_error("error"); }
 
-constexpr int square(int x) {
-    return x * x;
-}
+constexpr int square(int x) { return x * x; }
 
 int square2(int x) { return x * x; }
 

@@ -10,9 +10,8 @@ constexpr int factorial(int n) {
 template <typename T>
 constexpr T PI{3.1415926535897932385};
 
-[[deprecated]] void old_method() {
-
-}[[deprecated("Use new_method instead")]] void legacy_method() {}
+[[deprecated]] void old_method() {}
+[[deprecated("Use new_method instead")]] void legacy_method() {}
 
 int main() {
     // Relaxing constraints on constexpr functions ( don't need to write constexpr for

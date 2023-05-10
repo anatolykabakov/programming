@@ -10,13 +10,13 @@ int main() {
         std::cout << "Async default, Threadid=" << std::this_thread::get_id() << "\n";
     });
 
-    auto asyncDeffered = std::async(std::launch::deferred,
-                                    [](const std::string &str) {
-                                        std::cout << "Async deffer, Threadid="
-                                                  << std::this_thread::get_id() << ","
-                                                  << str << "\n";
-                                    },
-                                    std::string("end string"));
+    auto asyncDeffered = std::async(
+        std::launch::deferred,
+        [](const std::string &str) {
+            std::cout << "Async deffer, Threadid=" << std::this_thread::get_id() << ","
+                      << str << "\n";
+        },
+        std::string("end string"));
 
     auto asyncDeffered2 = std::async(std::launch::deferred, []() {
         std::cout << "Async deffer2, Threadid=" << std::this_thread::get_id() << "\n";
