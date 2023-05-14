@@ -1,6 +1,14 @@
 {
   "files.autoSave": "afterDelay",
-  // "editor.detectIndentation": false,
+  "editor.detectIndentation": false,
   "editor.tabSize": 2,
-  "editor.language.brackets": []
+  "editor.language.brackets": [],
+  "files.associations": {
+    "*.tcc": "cpp",
+    "list": "cpp",
+    "string": "cpp",
+    "vector": "cpp",
+    "future": "cpp",
+    "functional": "cpp"
+  }
 }

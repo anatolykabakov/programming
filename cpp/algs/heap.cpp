@@ -1,73 +1,87 @@
 // https://www.programiz.com/dsa/heap-data-structure
 
-// Max-Heap data structure in C++
-
+#include <exception>
 #include <iostream>
 #include <vector>
-using namespace std;
 
-void swap(int *a, int *b) {
-    int temp = *b;
-    *b = *a;
-    *a = temp;
-}
-void heapify(vector<int> &hT, int i) {
-    int size = hT.size();
-    int largest = i;
-    int l = 2 * i + 1;
-    int r = 2 * i + 2;
-    if (l < size && hT[l] > hT[largest]) largest = l;
-    if (r < size && hT[r] > hT[largest]) largest = r;
+class Heap {
+public:
+    Heap() { heap_.push_back(0); }
 
-    if (largest != i) {
-        swap(&hT[i], &hT[largest]);
-        heapify(hT, largest);
-    }
-}
-void insert(vector<int> &hT, int newNum) {
-    int size = hT.size();
-    if (size == 0) {
-        hT.push_back(newNum);
-    } else {
-        hT.push_back(newNum);
-        for (int i = size / 2 - 1; i >= 0; i--) {
-            heapify(hT, i);
+    void push(int value) {
+        heap_.push_back(value);
+        int i = heap_.size() - 1;
+
+        while (i > 1 && heap_[i] < heap_[i / 2]) {
+            int tmp = heap_[i];
+            heap_[i] = heap_[i / 2];
+            heap_[i / 2] = tmp;
+            i /= 2;
         }
     }
-}
-void deleteNode(vector<int> &hT, int num) {
-    int size = hT.size();
-    int i;
-    for (i = 0; i < size; i++) {
-        if (num == hT[i]) break;
-    }
-    swap(&hT[i], &hT[size - 1]);
 
-    hT.pop_back();
-    for (int i = size / 2 - 1; i >= 0; i--) {
-        heapify(hT, i);
+    int pop() {
+        if (heap_.size() == 1) {
+            throw std::logic_error("heap empty!");
+        }
+        if (heap_.size() == 2) {
+            int result = heap_[heap_.size() - 1];
+            heap_.pop_back();
+            return result;
+        }
+
+        int root = heap_[1];
+        heap_[1] = heap_[heap_.size() - 1];
+        heap_.pop_back();
+
+        int i = 1;
+        while (2 * i < heap_.size()) {
+            if (2 * i + 1 < heap_.size() && heap_[2 * i + 1] < heap_[2 * i] &&
+                heap_[i] > heap_[2 * i + 1]) {
+                // Swap right child
+                int tmp = heap_[i];
+                heap_[i] = heap_[2 * i + 1];
+                heap_[2 * i + 1] = tmp;
+                i = 2 * i + 1;
+            } else if (heap_[i] > heap_[2 * i]) {
+                // Swap left child
+                int tmp = heap_[i];
+                heap_[i] = heap_[2 * i];
+                heap_[2 * i] = tmp;
+                i = 2 * i;
+            } else {
+                break;
+            }
+        }
+        return root;
     }
-}
-void printArray(vector<int> &hT) {
-    for (int i = 0; i < hT.size(); ++i) cout << hT[i] << " ";
-    cout << "\n";
-}
+
+    int root() { return heap_[1]; }
+
+    void print() {
+        for (const auto &el : heap_) {
+            std::cout << el << std::endl;
+        }
+    }
+
+private:
+    std::vector<int> heap_;
+};
 
 int main() {
-    vector<int> heapTree;
-
-    insert(heapTree, 3);
-    insert(heapTree, 4);
-    insert(heapTree, 9);
-    insert(heapTree, 5);
-    insert(heapTree, 2);
-
-    cout << "Max-Heap array: ";
-    printArray(heapTree);
-
-    deleteNode(heapTree, 4);
-
-    cout << "After deleting an element: ";
-
-    printArray(heapTree);
+    // 14,19,16,21,26,19,68,65,30
+    Heap h;
+    h.push(14);
+    h.push(19);
+    h.push(16);
+    h.push(21);
+    h.push(26);
+    h.push(19);
+    h.push(68);
+    h.push(30);
+    h.print();
+    h.push(17);
+    h.print();
+    std::cout << "pop " << h.pop() << std::endl;
+    h.print();
 }

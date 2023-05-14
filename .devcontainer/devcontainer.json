@@ -11,7 +11,7 @@
     "ms-vscode.cmake-tools",
     "ms-vscode.cpptools-extension-pack",
     "ms-python.python",
-    "ms-iot.vscode-ros@0.8.0"
+    "cschlosser.doxdocgen"
   ]
 
   //"initializeCommand": "xhost +local:docker"
