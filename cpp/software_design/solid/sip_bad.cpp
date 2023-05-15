@@ -15,9 +15,9 @@
   1. хранить информацию о товаре
 */
 struct Item {
-    std::string name;
-    float price;
-    int quantity;
+  std::string name;
+  float price;
+  int quantity;
 };
 
 enum class PaymentType { CARD, CASH };
@@ -30,42 +30,44 @@ enum class PaymentType { CARD, CASH };
 */
 class GODObjectOrder {
 public:
-    GODObjectOrder() {}
+  GODObjectOrder() {}
 
-    void add(const Item &item) { items.push_back(item); }
+  void add(const Item& item) { items.push_back(item); }
 
-    void print() {
-        for (const auto &item : items) {
-            std::cout << "name " << item.name << " price " << item.price << " quantity "
-                      << item.quantity << std::endl;
-        }
+  void print()
+  {
+    for (const auto& item : items) {
+      std::cout << "name " << item.name << " price " << item.price << " quantity " << item.quantity << std::endl;
+    }
+  }
+
+  void pay(float money, PaymentType type, const std::string& security)
+  {
+    float total_price = 0;
+    for (const auto& item : items) {
+      total_price += item.price * item.quantity;
     }
 
-    void pay(float money, PaymentType type, const std::string &security) {
-        float total_price = 0;
-        for (const auto &item : items) {
-            total_price += item.price * item.quantity;
-        }
+    std::cout << "Verify security code " << security << std::endl;
 
-        std::cout << "Verify security code " << security << std::endl;
-
-        if (money >= total_price) {
-            std::cout << "order payed!" << std::endl;
-        } else {
-            std::cout << "not enouth money!" << std::endl;
-        }
+    if (money >= total_price) {
+      std::cout << "order payed!" << std::endl;
+    } else {
+      std::cout << "not enouth money!" << std::endl;
     }
+  }
 
 private:
-    std::vector<Item> items;
+  std::vector<Item> items;
 };
 
-int main() {
-    GODObjectOrder order;
-    order.add(Item{"One", 200.0f, 2});
-    order.add(Item{"Two", 300.0f, 1});
-    order.print();
-    order.pay(100.0f, PaymentType::CASH, "12345");
-    order.pay(1000.0f, PaymentType::CARD, "12345");
-    return 0;
+int main()
+{
+  GODObjectOrder order;
+  order.add(Item{"One", 200.0f, 2});
+  order.add(Item{"Two", 300.0f, 1});
+  order.print();
+  order.pay(100.0f, PaymentType::CASH, "12345");
+  order.pay(1000.0f, PaymentType::CARD, "12345");
+  return 0;
 }

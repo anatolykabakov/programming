@@ -14,12 +14,14 @@ auto f() -> int { return 123; }
 
 // Trailing return types allows this:
 template <typename T, typename U>
-auto add(T a, U b) -> decltype(a + b) {
-    return a + b;
+auto add(T a, U b) -> decltype(a + b)
+{
+  return a + b;
 }
 
-int main() {
-    std::cout << f() << std::endl;
-    std::cout << add(1, 2) << std::endl;
-    return 0;
+int main()
+{
+  std::cout << f() << std::endl;
+  std::cout << add(1, 2) << std::endl;
+  return 0;
 }

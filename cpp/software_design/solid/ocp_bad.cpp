@@ -9,9 +9,9 @@
 */
 
 struct Item {
-    std::string name;
-    float price;
-    int quantity;
+  std::string name;
+  float price;
+  int quantity;
 };
 
 enum class PaymentStatus { NotPaid, Paid };
@@ -24,61 +24,62 @@ enum class PaymentType { CARD, CASH };
 */
 class Order {
 public:
-    Order() {}
+  Order() {}
 
-    void add(const Item &item) { items.push_back(item); }
+  void add(const Item& item) { items.push_back(item); }
 
-    void print() {
-        for (const auto &item : items) {
-            std::cout << "name " << item.name << " price " << item.price << " quantity "
-                      << item.quantity << std::endl;
-        }
+  void print()
+  {
+    for (const auto& item : items) {
+      std::cout << "name " << item.name << " price " << item.price << " quantity " << item.quantity << std::endl;
     }
+  }
 
-    float price() {
-        float total_price = 0;
-        for (const auto &item : items) {
-            total_price += item.price * item.quantity;
-        }
-        return total_price;
+  float price()
+  {
+    float total_price = 0;
+    for (const auto& item : items) {
+      total_price += item.price * item.quantity;
     }
+    return total_price;
+  }
 
 private:
-    std::vector<Item> items;
+  std::vector<Item> items;
 };
 /*
   Класс обрабатывает единицы товара
   1. оплачивает заказ
 */
 struct Payment {
-    void pay(
-        Order order,
-        PaymentType type,
-        float money) {  // Для добавления нового типа оплаты надо менять код в Payment
-        if (type == PaymentType::CARD) {
-            enough_money(order, money);
-        }
-        if (type == PaymentType::CASH) {
-            enough_money(order, money);
-        }
+  void pay(Order order, PaymentType type, float money)
+  {  // Для добавления нового типа оплаты надо менять код в Payment
+    if (type == PaymentType::CARD) {
+      enough_money(order, money);
     }
+    if (type == PaymentType::CASH) {
+      enough_money(order, money);
+    }
+  }
 
-    bool enough_money(Order order, float money) {
-        if (money >= order.price()) {
-            std::cout << "order payed!" << std::endl;
-        } else {
-            std::cout << "not enouth money!" << std::endl;
-        }
+  bool enough_money(Order order, float money)
+  {
+    if (money >= order.price()) {
+      std::cout << "order payed!" << std::endl;
+    } else {
+      std::cout << "not enouth money!" << std::endl;
     }
+  }
 };
 
-int main() {
-    Order order;
-    order.add(Item{"One", 200.0f, 2});
-    order.add(Item{"Two", 300.0f, 1});
-    order.print();
-    Payment payment;
-    payment.pay(order, PaymentType::CARD, 100.0f);
-    payment.pay(order, PaymentType::CARD, 1000.0f);
-    return 0;
+int main()
+{
+  Order order;
+  order.add(Item{"One", 200.0f, 2});
+  order.add(Item{"Two", 300.0f, 1});
+  order.print();
+  Payment payment;
+  payment.pay(order, PaymentType::CARD, 100.0f);
+  payment.pay(order, PaymentType::CARD, 1000.0f);
+  return 0;
 }

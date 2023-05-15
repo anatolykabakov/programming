@@ -31,66 +31,68 @@
 using namespace std;
 class Solution {
 public:
-    string decodeString(string s) {
-        stack<char> st;
+  string decodeString(string s)
+  {
+    stack<char> st;
 
-        for (int i = 0; i < s.size(); ++i) {
-            if (s[i] == ']') {
-                string str;
-                while (st.top() != '[') {
-                    char c = st.top();
-                    st.pop();
-                    str += c;
-                }
-                reverse(str.begin(), str.end());
+    for (int i = 0; i < s.size(); ++i) {
+      if (s[i] == ']') {
+        string str;
+        while (st.top() != '[') {
+          char c = st.top();
+          st.pop();
+          str += c;
+        }
+        reverse(str.begin(), str.end());
 
-                st.pop();  // pop [
+        st.pop();  // pop [
 
-                string digit_str;
-                while (!st.empty() && st.top() <= '9' && st.top() >= '0') {
-                    char c = st.top();
-                    st.pop();
-                    digit_str += c;
-                }
-
-                reverse(digit_str.begin(), digit_str.end());
-
-                int k = stoi(digit_str);
-
-                string res;
-                for (int j = 0; j < k; ++j) {
-                    res += str;
-                }
-                for (int j = 0; j < res.size(); ++j) {
-                    st.push(res[j]);
-                }
-
-            } else {
-                st.push(s[i]);
-            }
+        string digit_str;
+        while (!st.empty() && st.top() <= '9' && st.top() >= '0') {
+          char c = st.top();
+          st.pop();
+          digit_str += c;
         }
 
-        string ans;
-        while (!st.empty()) {
-            char c = st.top();
-            ans += c;
-            st.pop();
+        reverse(digit_str.begin(), digit_str.end());
+
+        int k = stoi(digit_str);
+
+        string res;
+        for (int j = 0; j < k; ++j) {
+          res += str;
+        }
+        for (int j = 0; j < res.size(); ++j) {
+          st.push(res[j]);
         }
 
-        reverse(ans.begin(), ans.end());
-
-        return ans;
+      } else {
+        st.push(s[i]);
+      }
     }
+
+    string ans;
+    while (!st.empty()) {
+      char c = st.top();
+      ans += c;
+      st.pop();
+    }
+
+    reverse(ans.begin(), ans.end());
+
+    return ans;
+  }
 };
 
-int main() {
-    std::vector<int> array = {2, 7, 11, 15};
-    Solution solution;
-    cout << solution.decodeString("100[leetcode]") << endl;
+int main()
+{
+  std::vector<int> array = {2, 7, 11, 15};
+  Solution solution;
+  cout << solution.decodeString("100[leetcode]") << endl;
 
-    // for (const auto& item : indices) {
-    //   std::cout << item << std::endl;
-    // }
+  // for (const auto& item : indices) {
+  //   std::cout << item << std::endl;
+  // }
 
-    return 0;
+  return 0;
 }
