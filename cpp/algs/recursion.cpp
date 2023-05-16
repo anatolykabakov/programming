@@ -20,7 +20,7 @@ int fibonachi(int i)
 
 int main()
 {
-  std::cout << "factorial is " << factorial(3) << std::endl;
-  std::cout << "fibonachi is " << fibonachi(4) << std::endl;
+  std::cout << "factorial 3 is " << factorial(3) << std::endl;
+  std::cout << "fibonachi 4 is " << fibonachi(4) << std::endl;
   return 0;
 }

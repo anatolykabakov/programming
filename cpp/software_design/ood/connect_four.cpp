@@ -1,10 +1,41 @@
 /**
  * @file connect_four.cpp
  * @author Anatoly Kabakov (anatoly.kabakov@mail.ru)
- * @brief Connect Four is a popular ConnectFourGame played on a 7x6 grid.
- * Two players take turns dropping colored discs into the grid.
- * The first player to get four discs in a row (vertically, horizontally or diagonally)
- * wins.
+    1. Description:
+    Connect Four is a popular ConnectFourGame played on a 7x6 grid.
+    Two players take turns dropping colored discs into the grid.
+    The first player to get four discs in a row (vertically, horizontally or diagonally) wins.
+
+    TODO: ПЕРЕВЕСТИ НА АНГЛИЙСКИЙ
+
+    2. Требования
+    2.2 Вопросы к системе. (Чтобы сформулировать требования, нужно задать вопросы к системе)
+    2.2.1 Какие правила игры?
+    2.2.2 Какой размер доски?
+    2.2.3 Сколько игроков играет в игру?
+    2.2.4 Нужно ли следить за счетом?
+
+    2.3 Требования к системе (Ответы на вопросы).
+    2.2.1 Какие правила игры? -- Два игрока по очереди ставят диски на доску, размером 6x6.
+    У каждого игрока диски одного цвета. В игре N раундов.
+    Раунд выигрывает игрок, который первым поставит четыре диска одного цвета в ряд на доске.
+    Диски могут быть соединены по вертикали, горизонтали, диагонали.
+
+    2.2.2 Какой размер доски? --  Размер доски не фиксированный и может меняться. По умолчанию, 6 x 6.
+    2.2.3 Сколько игроков играет в игру? -- В игру может играть N игроков. По умолчанию, 2.
+    2.2.4 Нужно ли следить за счетом? -- Должна быть система подсчета очков и контроля за выйгрышем.
+
+    3. Дизайн системы
+    3.1 Верхнеуровневый дизайн (Абстракция)
+    3.1.1 Необходимо отслеживать состояние 2д доски. Доска поделена на клетки.
+    Каждая клетка может содержать цвет или пустое значение. Игрок может за один код может менять значение пустой клетки.
+    Эту отвественность может выполнять класс Grid.
+    3.1.2 Необходимо хранить описание игрока. Игрок может иметь диски одного цвета. У игрока есть имя. Эту задачу может
+ выполнять класс Grid. 3.1.3 Необходимо отслеживать соединенные диски одного цвета для подсчета очков и контроля
+ выйгрыша.  Эту задачу может выполнять класс Judge. 3.1.4 Необходим менджер взаимодействия игроков, доски, судьи.
+ Менеджер отвечает за процесс игры. В игре есть N раундов. Каждый раунд заканчивается победой одного игрока, при условии
+ что четыре диска на доске соединены. Эту задачу может выполнять класс ConnectFourGame.
+
  * @version 0.1
  * @date 2023-05-13
  *
@@ -22,7 +53,7 @@ enum class CellState { EMPTY, YELLOW, RED };
 
 /**
  * @brief We will need a Grid class to maintain the state of the 2-D board
- * The board cell can be empty, yellow (occupied by Player 1) or red (occupied by Player
+ * The board cell can be empty, yellow (occupied by Player 1) or red (occupied by Player 2)
  *
  */
 class Grid {
@@ -188,7 +219,9 @@ void print_board(const std::shared_ptr<Grid>& grid)
 }  // namespace utils
 
 /**
- * @brief
+ * @brief менджер взаимодействия игроков, доски, судьи. Менеджер отвечает за процесс игры.
+ В игре есть N раундов. Каждый раунд заканчивается победой одного игрока, при условии что четыре диска на доске
+ соединены.
  *
  */
 class ConnectFourGame {
