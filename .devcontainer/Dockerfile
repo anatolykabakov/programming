@@ -47,6 +47,4 @@ RUN echo 'LC_NUMERIC="en_US.UTF-8"' >> /root/.zshrc
 
 RUN pip3 install conan pre-commit cmakelang
 
-# RUN apt install -y libpcl-dev libtclap-dev
-
 CMD ["zsh"]

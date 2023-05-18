@@ -20,7 +20,7 @@ private:
 
 class B : public A {
 public:
-  B() : A() { printFromConstructor(); };
+  B() { printFromConstructor(); };
 
   virtual void printFromConstructor() { std::cout << "B"; }
 
