@@ -93,10 +93,12 @@ private:
   bool is_segments_connected_()
   {
     const auto& segments = chain_->segments();
+    if (segments.empty()) {
+      return false;
+    }
     if (segments.size() < 2) {
       return true;
     }
-
     for (uint i = 1; i < segments.size(); ++i) {
       bool result = segments[i - 1].end_point != segments[i].begin_point;
       if (segments[i - 1].end_point != segments[i].begin_point) {
