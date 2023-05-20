@@ -2,6 +2,8 @@
 #include <iostream>
 #include <vector>
 #include <optional>
+#include <cassert>
+#include <bits/stdc++.h>
 
 struct Point {
   double x;
@@ -13,6 +15,10 @@ std::ostream& operator<<(std::ostream& os, const Point& point)
   os << "(" << point.x << ", " << point.y << ")";
   return os;
 }
+
+bool operator!=(const Point& left, const Point& right) { return left.x != right.x || left.y != right.y; }
+
+bool operator==(const Point& left, const Point& right) { return left.x == right.x && left.y == right.y; }
 
 class Chain {
   friend class ChainBuilder;
@@ -76,6 +82,7 @@ public:
   bool validate_chain()
   {
     bool chain_valid = true;
+    chain_valid &= is_segments_empty_();
     chain_valid &= is_segments_connected_();
     return chain_valid;
   }
@@ -86,10 +93,26 @@ private:
 private:
   bool is_segments_connected_()
   {
-    // validate logic here ...
+    const auto& segments = chain_->segments();
+    if (segments.size() < 2) {
+      return true;
+    }
+
+    for (uint i = 1; i < segments.size(); ++i) {
+      bool result = segments[i - 1].end_point != segments[i].begin_point;
+      if (segments[i - 1].end_point != segments[i].begin_point) {
+        return false;
+      }
+    }
     return true;
   }
+  bool is_segments_empty_() { return !chain_->segments().empty(); }
 };
+
+bool rand_bool()
+{
+  return (std::rand() % 2);  // Если рандомное число нечетное, то вернется true, иначе false
+}
 
 /**
  * @brief Этот класс выполняет построение валидной цепочки
@@ -106,12 +129,36 @@ public:
 
   std::shared_ptr<Chain> build_chain(const std::optional<Point> begin_point = std::nullopt)
   {
-    if (validator_->validate_chain()) {
-      return chain_;
-    } else {
+    if (!validator_->validate_chain()) {
       chain_->segments_.clear();
       return nullptr;
     }
+    bool is_begin = false;
+    bool is_end = false;
+    if (begin_point.has_value()) {
+      is_begin = begin_point.value() == chain_->segments_.front().begin_point;
+      is_end = begin_point.value() == chain_->segments_.back().end_point;
+    } else {
+      bool random_select_point =
+          static_cast<bool>(std::rand() % 2);  // Если рандомное число нечетное, то вернется true, иначе false
+      if (random_select_point) {
+        is_begin = true;
+      } else {
+        is_end = true;
+      }
+    }
+    if (is_end) {
+      for (uint i = 0; i < chain_->segments_.size() / 2; ++i) {
+        std::swap(chain_->segments_[i].begin_point, chain_->segments_[i].end_point);
+        std::swap(chain_->segments_[chain_->segments_.size() - 1 - i].begin_point,
+                  chain_->segments_[chain_->segments_.size() - 1 - i].end_point);
+        std::swap(chain_->segments_[i], chain_->segments_[chain_->segments_.size() - 1 - i]);
+      }
+    }
+    if (!is_end && !is_begin) {
+      return nullptr;
+    }
+    return chain_;
   }
 
 private:
@@ -119,17 +166,112 @@ private:
   std::unique_ptr<ChainValidator> validator_;
 };
 
-int main()
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{5, 0} {10, 5}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: {{0, 0} {5, 0}}, {{5, 0} {10, 5}}
+ */
+void testcase1()
 {
   ChainBuilder chain_builder;
   chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
   chain_builder.add_segment({{5.0, 0.0}, {10.0, 5.0}});
 
-  const auto& chain = chain_builder.build_chain();
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain != nullptr);
 
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (0.0, 0.0), (5.0, 0.0), (10.0, 5.0)
   }
+}
+
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{6, 0} {10, 0}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: nullptr
+ */
+void testcase2()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{6.0, 0.0}, {10.0, 5.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain == nullptr);
+}
+
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{10, 5} {5, 0}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: nullptr
+ */
+void testcase3()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{10.0, 5.0}, {5.0, 0.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain == nullptr);
+}
+
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{5, 0} {10, 5}}, {{5, 0} {10, 7}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: nullptr
+ */
+void testcase4()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{5.0, 0.0}, {10.0, 5.0}});
+  chain_builder.add_segment({{5.0, 0.0}, {10.0, 7.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain == nullptr);
+}
+
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{5, 0} {10, 5}}
+  Начальная точка сегмента: {10, 5}
+  Выход:
+  Цепочка: {{10, 5} {5, 0}}, {{5, 0} {0, 0}}
+ */
+void testcase5()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{5.0, 0.0}, {10.0, 5.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({10.0, 5.0}));
+
+  assert(chain != nullptr);
+
+  for (const auto& point : chain->points()) {
+    std::cout << point << std::endl;  // (10.0, 5.0), (5.0, 0.0), (0.0, 0.0)
+  }
+}
+
+int main()
+{
+  testcase1();
+  testcase2();
+  testcase3();
+  testcase4();
+  testcase5();
 
   return 0;
 }
