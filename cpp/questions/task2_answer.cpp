@@ -20,6 +20,11 @@ bool operator!=(const Point& left, const Point& right) { return left.x != right.
 
 bool operator==(const Point& left, const Point& right) { return left.x == right.x && left.y == right.y; }
 
+bool operator<(const Point& left, const Point& right)
+{
+  return std::hypot(left.x, left.y) < std::hypot(right.x, right.y);
+}
+
 class Chain {
   friend class ChainBuilder;
 
@@ -124,14 +129,19 @@ public:
 
   std::shared_ptr<Chain> build_chain(const std::optional<Point> begin_point = std::nullopt)
   {
+    // Сегменты могут быть переданы в любом порядке, значит надо расставить сегменты последовательно. Рассмотрим простой
+    // случай, когда сортировка по первой точке сегмента
+    std::sort(
+        chain_->segments_.begin(), chain_->segments_.end(),
+        [](const Chain::Segment& left, const Chain::Segment& right) { return left.begin_point < right.begin_point; });
     // Проверка, что сегменты цепочки соединены корректно
     if (!validator_->validate_chain()) {
       chain_->segments_.clear();
       return nullptr;
     }
-    // Цепочка может начинаться с начальной или конечной точки.
-    // Если начальная точка не содержит значение, то начальная точка выбирается рандомно между начальной и конечной
-    // точкой
+    // Цепочка может начинаться из любой точки. Рассмотрим простой случай -- цепочка может начинаться с начальной или
+    // конечной точки. Если начальная точка не содержит значение, то начальная точка выбирается рандомно между начальной
+    // и конечной точкой
     bool is_begin = false;
     bool is_end = false;
     if (begin_point.has_value()) {
@@ -164,10 +174,10 @@ private:
 private:
   void reverse_chain_()
   {
-    for (uint i = 0; i < chain_->segments_.size() / 2; ++i) {
+    for (uint i = 0; i < chain_->segments_.size(); ++i) {
       std::swap(chain_->segments_[i].begin_point, chain_->segments_[i].end_point);
-      std::swap(chain_->segments_[chain_->segments_.size() - 1 - i].begin_point,
-                chain_->segments_[chain_->segments_.size() - 1 - i].end_point);
+    }
+    for (uint i = 0; i < chain_->segments_.size() / 2; ++i) {
       std::swap(chain_->segments_[i], chain_->segments_[chain_->segments_.size() - 1 - i]);
     }
   }
@@ -193,6 +203,8 @@ void testcase1()
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (0.0, 0.0), (5.0, 0.0), (10.0, 5.0)
   }
+
+  std::cout << "testcase1 end" << std::endl;
 }
 
 /**
@@ -270,6 +282,57 @@ void testcase5()
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (10.0, 5.0), (5.0, 0.0), (0.0, 0.0)
   }
+  std::cout << "testcase5 end" << std::endl;
+}
+
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{10, 5} {20, 5}}, {{5, 0} {10, 5}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: {{0, 0} {5, 0}}, {{5, 0} {10, 5}}, {{10, 5} {20, 5}}
+  Примечание: Билдер может принимать сегменты в любом порядке
+ */
+void testcase6()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{10.0, 5.0}, {20.0, 5.0}});
+  chain_builder.add_segment({{5.0, 0.0}, {10.0, 5.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain != nullptr);
+
+  for (const auto& point : chain->points()) {
+    std::cout << point << std::endl;  // (0.0, 0.0), (5.0, 0.0), (10.0, 5.0), (20.0, 5.0)
+  }
+  std::cout << "testcase6 end" << std::endl;
+}
+
+/**
+ *Вход:
+  Сегменты: {{0, 0} {5, 0}}, {{10, 5} {20, 5}}, {{5, 0} {10, 5}}
+  Начальная точка сегмента: {20, 5}
+  Выход:
+  Цепочка: {{20, 5} {10, 5}}, {{10, 5} {5, 0}}, {{5, 0} {0, 0}}
+  Примечание: Билдер может принимать сегменты в любом порядке
+ */
+void testcase7()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{10.0, 5.0}, {20.0, 5.0}});
+  chain_builder.add_segment({{5.0, 0.0}, {10.0, 5.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({20.0, 5.0}));
+
+  assert(chain != nullptr);
+
+  for (const auto& point : chain->points()) {
+    std::cout << point << std::endl;  // (20.0, 5.0), (10.0, 5.0), (5.0, 0.0) (0.0, 0.0)
+  }
+  std::cout << "testcase7 end" << std::endl;
 }
 
 int main()
@@ -279,6 +342,8 @@ int main()
   testcase3();
   testcase4();
   testcase5();
+  testcase6();
+  testcase7();
 
   return 0;
 }
