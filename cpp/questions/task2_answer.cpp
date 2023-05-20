@@ -82,7 +82,6 @@ public:
   bool validate_chain()
   {
     bool chain_valid = true;
-    chain_valid &= is_segments_empty_();
     chain_valid &= is_segments_connected_();
     return chain_valid;
   }
@@ -106,13 +105,7 @@ private:
     }
     return true;
   }
-  bool is_segments_empty_() { return !chain_->segments().empty(); }
 };
-
-bool rand_bool()
-{
-  return (std::rand() % 2);  // Если рандомное число нечетное, то вернется true, иначе false
-}
 
 /**
  * @brief Этот класс выполняет построение валидной цепочки
@@ -129,32 +122,33 @@ public:
 
   std::shared_ptr<Chain> build_chain(const std::optional<Point> begin_point = std::nullopt)
   {
+    // Проверка, что сегменты цепочки соединены корректно
     if (!validator_->validate_chain()) {
       chain_->segments_.clear();
       return nullptr;
     }
+    // Цепочка может начинаться с начальной или конечной точки.
+    // Если начальная точка не содержит значение, то начальная точка выбирается рандомно между начальной и конечной
+    // точкой
     bool is_begin = false;
     bool is_end = false;
     if (begin_point.has_value()) {
       is_begin = begin_point.value() == chain_->segments_.front().begin_point;
       is_end = begin_point.value() == chain_->segments_.back().end_point;
     } else {
-      bool random_select_point =
-          static_cast<bool>(std::rand() % 2);  // Если рандомное число нечетное, то вернется true, иначе false
-      if (random_select_point) {
+      // Если рандомное число нечетное, то вернется true, иначе false
+      bool random_bool = static_cast<bool>(std::rand() % 2);
+      if (random_bool) {
         is_begin = true;
       } else {
         is_end = true;
       }
     }
+    // Если передана начальная точка и она равна конечной точке цепочки, то цепочку надо перевернуть
     if (is_end) {
-      for (uint i = 0; i < chain_->segments_.size() / 2; ++i) {
-        std::swap(chain_->segments_[i].begin_point, chain_->segments_[i].end_point);
-        std::swap(chain_->segments_[chain_->segments_.size() - 1 - i].begin_point,
-                  chain_->segments_[chain_->segments_.size() - 1 - i].end_point);
-        std::swap(chain_->segments_[i], chain_->segments_[chain_->segments_.size() - 1 - i]);
-      }
+      reverse_chain_();
     }
+    // Если начальная точка невалидна, то возвращаем nullptr
     if (!is_end && !is_begin) {
       return nullptr;
     }
@@ -164,6 +158,17 @@ public:
 private:
   std::shared_ptr<Chain> chain_;
   std::unique_ptr<ChainValidator> validator_;
+
+private:
+  void reverse_chain_()
+  {
+    for (uint i = 0; i < chain_->segments_.size() / 2; ++i) {
+      std::swap(chain_->segments_[i].begin_point, chain_->segments_[i].end_point);
+      std::swap(chain_->segments_[chain_->segments_.size() - 1 - i].begin_point,
+                chain_->segments_[chain_->segments_.size() - 1 - i].end_point);
+      std::swap(chain_->segments_[i], chain_->segments_[chain_->segments_.size() - 1 - i]);
+    }
+  }
 };
 
 /**
