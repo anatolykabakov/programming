@@ -72,49 +72,6 @@ private:
 };
 
 /**
- * @brief Этот класс выполняет задачу валидации цепочки.
- * Цепочка валидна, если:
- * 1. Соседние сегменты цепочки соединены, т.е координаты
- * последней точки первого сегмента и координата первой точки равны.
- * 2. Сегмент имеет одного или ноль соседей в одном направлении
- * Цепочка не валидна, если:
- * 1. Соседние сегменты не имеют общих координат начала и конца
- * 2. Сегмент имеет более одного соседа в одном направлении
- */
-class ChainValidator {
-public:
-  ChainValidator(const std::shared_ptr<Chain>& chain) : chain_(chain) {}
-  bool validate_chain()
-  {
-    bool chain_valid = true;
-    chain_valid &= is_segments_connected_();
-    return chain_valid;
-  }
-
-private:
-  std::shared_ptr<Chain> chain_;
-
-private:
-  bool is_segments_connected_()
-  {
-    const auto& segments = chain_->segments();
-    if (segments.empty()) {
-      return false;
-    }
-    if (segments.size() < 2) {
-      return true;
-    }
-    for (uint i = 1; i < segments.size(); ++i) {
-      bool result = segments[i - 1].end_point != segments[i].begin_point;
-      if (segments[i - 1].end_point != segments[i].begin_point) {
-        return false;
-      }
-    }
-    return true;
-  }
-};
-
-/**
  * @brief Этот класс выполняет построение валидной цепочки
    1. Билдер принимает сегменты в любом порядке
    2. Метод build_chain должен построить цепочку из ранее переданных отрезков.
@@ -123,21 +80,24 @@ private:
  */
 class ChainBuilder {
 public:
-  ChainBuilder() : chain_(std::make_shared<Chain>()), validator_(std::make_unique<ChainValidator>(chain_)) {}
+  ChainBuilder() : chain_(std::make_shared<Chain>()) {}
 
   void add_segment(Chain::Segment&& segment) { chain_->segments_.push_back(segment); }
 
   std::shared_ptr<Chain> build_chain(const std::optional<Point> begin_point = std::nullopt)
   {
-    // Сегменты могут быть переданы в любом порядке, значит надо расставить сегменты последовательно. Рассмотрим простой
-    // случай, когда сортировка по первой точке сегмента
-    std::sort(
-        chain_->segments_.begin(), chain_->segments_.end(),
-        [](const Chain::Segment& left, const Chain::Segment& right) { return left.begin_point < right.begin_point; });
-    // Проверка, что сегменты цепочки соединены корректно
-    if (!validator_->validate_chain()) {
-      chain_->segments_.clear();
-      return nullptr;
+    // Time: O(N*N)
+    for (uint i = 0; i < chain_->segments_.size() - 1; ++i) {
+      bool segment_found = false;
+      for (uint j = i; j < chain_->segments_.size(); ++j) {
+        if (chain_->segments_[i].end_point == chain_->segments_[j].begin_point) {
+          std::swap(chain_->segments_[i + 1], chain_->segments_[j]);
+          segment_found = true;
+        }
+      }
+      if (!segment_found) {
+        return nullptr;
+      }
     }
     // Цепочка может начинаться из любой точки. Рассмотрим простой случай -- цепочка может начинаться с начальной или
     // конечной точки. Если начальная точка не содержит значение, то начальная точка выбирается рандомно между начальной
@@ -169,7 +129,6 @@ public:
 
 private:
   std::shared_ptr<Chain> chain_;
-  std::unique_ptr<ChainValidator> validator_;
 
 private:
   void reverse_chain_()
@@ -199,6 +158,11 @@ void testcase1()
   auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
 
   assert(chain != nullptr);
+  const auto& segments = chain->segments();
+  assert((segments[0].begin_point == Point{0.0, 0.0}));
+  assert((segments[0].end_point == Point{5.0, 0.0}));
+  assert((segments[1].begin_point == Point{5.0, 0.0}));
+  assert((segments[1].end_point == Point{10.0, 5.0}));
 
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (0.0, 0.0), (5.0, 0.0), (10.0, 5.0)
@@ -278,6 +242,11 @@ void testcase5()
   auto chain = chain_builder.build_chain(std::optional<Point>({10.0, 5.0}));
 
   assert(chain != nullptr);
+  const auto& segments = chain->segments();
+  assert((segments[0].begin_point == Point{10.0, 5.0}));
+  assert((segments[0].end_point == Point{5.0, 0.0}));
+  assert((segments[1].begin_point == Point{5.0, 0.0}));
+  assert((segments[1].end_point == Point{0.0, 0.0}));
 
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (10.0, 5.0), (5.0, 0.0), (0.0, 0.0)
@@ -303,6 +272,13 @@ void testcase6()
   auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
 
   assert(chain != nullptr);
+  const auto& segments = chain->segments();
+  assert((segments[0].begin_point == Point{0.0, 0.0}));
+  assert((segments[0].end_point == Point{5.0, 0.0}));
+  assert((segments[1].begin_point == Point{5.0, 0.0}));
+  assert((segments[1].end_point == Point{10.0, 5.0}));
+  assert((segments[2].begin_point == Point{10.0, 5.0}));
+  assert((segments[2].end_point == Point{20.0, 5.0}));
 
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (0.0, 0.0), (5.0, 0.0), (10.0, 5.0), (20.0, 5.0)
@@ -328,11 +304,76 @@ void testcase7()
   auto chain = chain_builder.build_chain(std::optional<Point>({20.0, 5.0}));
 
   assert(chain != nullptr);
+  const auto& segments = chain->segments();
+  assert((segments[0].begin_point == Point{20.0, 5.0}));
+  assert((segments[0].end_point == Point{10.0, 5.0}));
+  assert((segments[1].begin_point == Point{10.0, 5.0}));
+  assert((segments[1].end_point == Point{5.0, 0.0}));
+  assert((segments[2].begin_point == Point{5.0, 0.0}));
+  assert((segments[2].end_point == Point{0.0, 0.0}));
 
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (20.0, 5.0), (10.0, 5.0), (5.0, 0.0) (0.0, 0.0)
   }
   std::cout << "testcase7 end" << std::endl;
+}
+
+/**
+ *Вход:
+  Сегменты: {{0.0, 0.0}, {5.0, 0.0}}, {{0.0, 5.0}, {10.0, 10.0}} {{5.0, 0.0}, {0.0, 5.0}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: {{0.0, 0.0}, {5.0, 0.0}},  {{5.0, 0.0}, {0.0, 5.0}}, {{0.0, 5.0}, {10.0, 10.0}}
+  Примечание: Билдер может принимать сегменты в любом порядке
+ */
+void testcase8()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+  chain_builder.add_segment({{0.0, 5.0}, {10.0, 10.0}});
+  chain_builder.add_segment({{5.0, 0.0}, {0.0, 5.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain != nullptr);
+  const auto& segments = chain->segments();
+  assert((segments[0].begin_point == Point{0.0, 0.0}));
+  assert((segments[0].end_point == Point{5.0, 0.0}));
+  assert((segments[1].begin_point == Point{5.0, 0.0}));
+  assert((segments[1].end_point == Point{0.0, 5.0}));
+  assert((segments[2].begin_point == Point{0.0, 5.0}));
+  assert((segments[2].end_point == Point{10.0, 10.0}));
+
+  for (const auto& point : chain->points()) {
+    std::cout << point << std::endl;  // (0, 0), (5, 0), (0, 5), (10, 10
+  }
+  std::cout << "testcase8 end" << std::endl;
+}
+
+/**
+ *Вход:
+  Сегменты: {{0.0, 0.0}, {5.0, 0.0}}
+  Начальная точка сегмента: {0, 0}
+  Выход:
+  Цепочка: {{0.0, 0.0}, {5.0, 0.0}}
+  Примечание: Билдер может принимать сегменты в любом порядке
+ */
+void testcase9()
+{
+  ChainBuilder chain_builder;
+  chain_builder.add_segment({{0.0, 0.0}, {5.0, 0.0}});
+
+  auto chain = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain != nullptr);
+  const auto& segments = chain->segments();
+  assert((segments[0].begin_point == Point{0.0, 0.0}));
+  assert((segments[0].end_point == Point{5.0, 0.0}));
+
+  for (const auto& point : chain->points()) {
+    std::cout << point << std::endl;  // (0.0, 0.0) (5.0, 0.0)
+  }
+  std::cout << "testcase9 end" << std::endl;
 }
 
 int main()
@@ -344,6 +385,8 @@ int main()
   testcase5();
   testcase6();
   testcase7();
+  testcase8();
+  testcase9();
 
   return 0;
 }
