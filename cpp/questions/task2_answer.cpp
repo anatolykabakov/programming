@@ -5,6 +5,17 @@
 #include <cassert>
 #include <bits/stdc++.h>
 
+/**
+ * TODO:
+ * 1. Проверить и убрать лишние аллокации и копирования точек
+ * 2. Посмотреть требования stl к итераторам и дописать итератор, если требуется корректная работа с контейнерами stl
+ * 3. Порефакторить код. Код определения начала и конца цепочки явно нужно вынести в отдельный метод
+ * 4. Отделить описания от определений.
+ * 5. Тесткейсы сделать через gtest
+ * 6. Добавить описания классов и методов doxygen.
+ *
+ */
+
 struct Point {
   double x;
   double y;
@@ -75,24 +86,15 @@ private:
  */
 class ChainBuilder {
 public:
-  ChainBuilder() : chain_(std::make_shared<Chain>()) {}
+  ChainBuilder() { }
 
-  void add_segment(Chain::Segment&& segment) { chain_->segments_.push_back(segment); }
+  void add_segment(Chain::Segment&& segment) { segments_.push_back(std::forward<Chain::Segment>(segment)); }
 
   std::shared_ptr<Chain> build_chain(const std::optional<Point> begin_point = std::nullopt)
   {
-    // Time: O(N*N)
-    for (uint i = 0; i < chain_->segments_.size() - 1; ++i) {
-      bool segment_found = false;
-      for (uint j = i; j < chain_->segments_.size(); ++j) {
-        if (chain_->segments_[i].end_point == chain_->segments_[j].begin_point) {
-          std::swap(chain_->segments_[i + 1], chain_->segments_[j]);
-          segment_found = true;
-        }
-      }
-      if (!segment_found) {
-        return nullptr;
-      }
+    bool segments_connected = connect_segments_();
+    if (!segments_connected) {
+      return nullptr;
     }
     // Цепочка может начинаться из любой точки.
     // Простой случай
@@ -103,7 +105,7 @@ public:
     // 1. Найти begin_point в цепочке.
     // 2. Если begin_point равен конечной точке цепочки, то нужно отбросить сегменты после точки и перевернуть цепочку.
     // 3. Если begin_point равен начачальной точке сегмента, то отбросить сегменты до точки.
-    // 4. Если begin_point не указан, то выбирается точка рандомно std::rand() % chain_->segments_.size() - 1
+    // 4. Если begin_point не указан, то выбирается точка рандомно std::rand() % segments_.size() - 1
     // Примечание: В сложном случае есть неопределенность выбора направления. Пример.
     // Вход:
     // Сегменты: {{0, 0} {5, 0}}, {{5, 0} {10, 0}}, {{10, 0} {15, 0}}
@@ -111,13 +113,13 @@ public:
     // Выход:
     // Цепочка: {{5, 0} {10, 0}}, {{10, 0} {15, 0}}
     // В таком кейсе ответ может быть {5, 0} {0, 0} или {{5, 0} {10, 0}}, {{10, 0} {15, 0}} в зависимости от реализации.
-    // Требуется уточнение..
+    // Требуется уточнение хочется ли такое поведение или достаточно простого случая
 
     bool is_begin = false;
     bool is_end = false;
     if (begin_point.has_value()) {
-      is_begin = begin_point.value() == chain_->segments_.front().begin_point;
-      is_end = begin_point.value() == chain_->segments_.back().end_point;
+      is_begin = begin_point.value() == segments_.front().begin_point;
+      is_end = begin_point.value() == segments_.back().end_point;
     } else {
       // Если рандомное число нечетное, то вернется true, иначе false
       bool random_bool = static_cast<bool>(std::rand() % 2);
@@ -133,27 +135,46 @@ public:
     }
     // Если передана начальная точка и она равна конечной точке цепочки, то цепочку надо перевернуть
     if (is_end) {
-      reverse_chain_();
+      reverse_segments_();
     }
     // Если начальная точка не найдена в цепочке, то возвращаем nullptr
     if (!is_end && !is_begin) {
       return nullptr;
     }
-    return chain_;
+    std::shared_ptr<Chain> chain = std::make_shared<Chain>();
+    chain->segments_ = std::move(segments_);
+    return chain;
   }
 
 private:
-  std::shared_ptr<Chain> chain_;
+  std::vector<Chain::Segment> segments_;
 
 private:
-  void reverse_chain_()
+  void reverse_segments_()
   {
-    for (uint i = 0; i < chain_->segments_.size(); ++i) {
-      std::swap(chain_->segments_[i].begin_point, chain_->segments_[i].end_point);
+    for (uint i = 0; i < segments_.size(); ++i) {
+      std::swap(segments_[i].begin_point, segments_[i].end_point);
     }
-    for (uint i = 0; i < chain_->segments_.size() / 2; ++i) {
-      std::swap(chain_->segments_[i], chain_->segments_[chain_->segments_.size() - 1 - i]);
+    for (uint i = 0; i < segments_.size() / 2; ++i) {
+      std::swap(segments_[i], segments_[segments_.size() - 1 - i]);
     }
+  }
+
+  bool connect_segments_() {
+    // Time: O(N*N)
+    for (uint i = 0; i < segments_.size() - 1; ++i) {
+      bool segment_found = false;
+      for (uint j = i; j < segments_.size(); ++j) {
+        if (segments_[i].end_point == segments_[j].begin_point) {
+          std::swap(segments_[i + 1], segments_[j]);
+          segment_found = true;
+        }
+      }
+      if (!segment_found) {
+        return false;
+      }
+    }
+    return true;
   }
 };
 
@@ -427,7 +448,14 @@ void testcase10()
   for (const auto& point : chain->points()) {
     std::cout << point << std::endl;  // (0, 0), (5, 0), (0, 5), (0, 0)
   }
-  std::cout << "testcase10 end" << std::endl;
+
+  chain_builder.add_segment({{10.0, 0.0}, {51.0, 0.0}});
+  chain_builder.add_segment({{51.0, 0.0}, {0.0, 5.0}});
+  chain_builder.add_segment({{0.0, 5.0}, {0.0, 0.0}});
+
+  auto chain2 = chain_builder.build_chain(std::optional<Point>({0.0, 0.0}));
+
+  assert(chain2 != nullptr);
 }
 
 int main()
