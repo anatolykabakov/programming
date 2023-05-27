@@ -1,5 +1,5 @@
 #include <iostream>
-#include <vector>
+#include <deque>
 
 template <typename T>
 class mystack {
@@ -17,7 +17,7 @@ public:
   }
 
 private:
-  std::vector<T> arr_;
+  std::deque<T> arr_;
 };
 
 int main()

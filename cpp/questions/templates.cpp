@@ -1,34 +1,43 @@
 #include <iostream>
 
 template <typename T>
-void foo(T arg)
-{
-  static int i = 0;
-  i++;
-  std::cout << i << std::endl;
-}
+struct foo {
+  foo(T arg) { std::cout << "__func__" << std::endl; }
+};
+
+template <>
+struct foo<bool> {
+  foo(bool arg) { std::cout << "specialization __func__" << std::endl; }
+};
 
 template <typename T>
-T sum(T arg)
+void swap(T& a, T& b)
 {
-  return arg;
+  T tmp = a;
+  a = b;
+  b = tmp;
 }
 
-template <typename T, typename... Args>
-T sum(T arg, Args... args)
-{
-  return arg + sum<T>(args...);
-}
+struct A {
+  double c;
+  int b;
+  bool a;
+};
 
 int main()
 {
-  foo(1);
-  foo(1);
-  foo(1.0);
+  foo<int> a(0);
+  foo<double> b(0.0);
+  foo<bool> c(true);
 
-  auto n1 = sum(0.5, 1, 0.5, 1);  // double 0.5 + (1 + (0.5 + 1))
-  auto n2 = sum(1, 0.5, 1, 0.5);  // int 1 + (0 + (0 + 1))
+  auto p = &swap<int>;
+  auto q = &swap<char>;
 
-  std::cout << n1 << " " << n2 << std::endl;
+  std::cout << "bool " << sizeof(true) << std::endl;
+  std::cout << "double " << sizeof(0.0) << std::endl;
+  std::cout << "int " << sizeof(1) << std::endl;
+  std::cout << "float " << sizeof(0.0f) << std::endl;
+  std::cout << "void* " << sizeof(void*) << std::endl;
+  std::cout << "A " << sizeof(A) << std::endl;
   return 0;
 }
