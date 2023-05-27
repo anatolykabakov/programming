@@ -86,7 +86,7 @@ private:
  */
 class ChainBuilder {
 public:
-  ChainBuilder() { }
+  ChainBuilder() {}
 
   void add_segment(Chain::Segment&& segment) { segments_.push_back(std::forward<Chain::Segment>(segment)); }
 
@@ -160,7 +160,8 @@ private:
     }
   }
 
-  bool connect_segments_() {
+  bool connect_segments_()
+  {
     // Time: O(N*N)
     for (uint i = 0; i < segments_.size() - 1; ++i) {
       bool segment_found = false;
