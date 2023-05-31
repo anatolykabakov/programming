@@ -3,15 +3,20 @@
 #include <iostream>
 #include <vector>
 
-void bubble_sort(std::vector<int>& array)
+// Time O(n) Space O(1)
+void bucket_sort(std::vector<int>& array)
 {
+  std::vector<int> range = {0, 0, 0};
+
+  for (const auto& el : array) {
+    range[el]++;
+  }
+
+  int k = 0;
   for (int i = 0; i < array.size(); ++i) {
-    for (int j = 0; j < array.size(); ++j) {
-      if (array[j] > array[j + 1]) {
-        int tmp = array[j];
-        array[j] = array[j + 1];
-        array[j + 1] = tmp;
-      }
+    for (int j = 0; j < range[i]; ++j) {
+      array[k] = i;
+      ++k;
     }
   }
 }
@@ -27,9 +32,9 @@ std::ostream& operator<<(std::ostream& os, const std::vector<int>& arr)
 
 int main()
 {
-  std::vector<int> array = {0, 3, 2, 5, 6, 8, 1, 9, 4, 2, 1, 2, 9, 6, 4, 1, 7, -1, -5, 23, 6, 2, 35, 6, 3, 32};
+  std::vector<int> array = {2, 1, 2, 0, 0, 2};
   std::cout << array << std::endl;
-  bubble_sort(array);
+  bucket_sort(array);
   std::cout << array << std::endl;
 
   return 0;

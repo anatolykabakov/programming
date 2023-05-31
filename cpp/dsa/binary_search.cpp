@@ -3,52 +3,54 @@
 #include <iostream>
 #include <vector>
 
-int binary_search(const std::vector<int>& array, int item)
+int binary_search(const std::vector<int>& array, int target, int start, int end)
 {
-  int start = 0;
-  int end = array.size() - 1;
+  while (start <= end) {
+    int middle = start + (end - start) / 2;
 
-  bool found = false;
-  while (!found && start <= end) {
-    int middle = std::floor((end + start) / 2);
-
-    if (array[middle] == item) {
+    if (array[middle] == target) {
       return middle;
     }
 
-    if (item < array[middle]) {
+    if (target < array[middle]) {
       end = middle - 1;
     } else {
       start = middle + 1;
     }
   }
+  return -1;
 }
 
-int resursive_binary_search(const std::vector<int>& array, int item, int start, int stop)
+int binary_search_resursive(const std::vector<int>& array, int target, int start, int end)
 {
-  if (start <= stop) {
-    return item;
+  if (start > end || end < 0) {
+    return -1;
   }
 
-  int middle = std::floor((stop + start) / 2);
-  auto pivot = array[middle];
+  int middle = start + (end - start) / 2;
 
-  if (pivot == item) {
-    return item;
+  if (array[middle] == target) {
+    return middle;
   }
-  if (pivot < item) {
-    return resursive_binary_search(array, item, start, middle - 1);
+  if (target < array[middle]) {
+    return binary_search_resursive(array, target, start, middle - 1);
   } else {
-    return resursive_binary_search(array, item, middle + 1, stop);
+    return binary_search_resursive(array, target, middle + 1, end);
   }
 }
 
 int main()
 {
-  std::vector<int> array = {0, 1, 2, 3, 4, 5};
+  std::vector<int> array = {0, 10, 20, 30, 40, 50};
 
-  std::cout << binary_search(array, 1) << std::endl;
-  std::cout << resursive_binary_search(array, 1, 0, array.size()) << std::endl;
+  std::cout << binary_search(array, 10, 0, array.size() - 1) << std::endl;
+  std::cout << binary_search_resursive(array, 10, 0, array.size() - 1) << std::endl;
+
+  std::cout << binary_search(array, 100, 0, array.size() - 1) << std::endl;
+  std::cout << binary_search_resursive(array, 100, 0, array.size() - 1) << std::endl;
+
+  std::cout << binary_search(array, -100, 0, array.size() - 1) << std::endl;
+  std::cout << binary_search_resursive(array, -100, 0, array.size() - 1) << std::endl;
 
   return 0;
 }

@@ -11,34 +11,26 @@
 
 Сложность алгоритма O(log2n)
 """
-from math import floor
 
 
-def binary_search(arr, number):
-    count = 0  # счетчик для оценки сложности
-    start = 0
-    end = len(arr)
-    middle = None
-    found = False
-    position = -1
-    count = 0
+def binary_search(nums, target):
+    l, r = 0, len(nums) - 1
 
-    while not found and start <= end:
-        count += 1
-        middle = floor((start + end) / 2)
+    while l <= r:
+        mid = l + (r - l) // 2
+        if nums[mid] == target:
+            return mid
 
-        if arr[middle] == number:
-            found = True
-            position = middle
-            return position, count
-        if number < arr[middle]:
-            end = middle
+        if nums[mid] < target:
+            l = mid + 1
         else:
-            start = middle
+            r = mid - 1
+    return -1
 
 
 if __name__ == "__main__":
     arr = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     number = 7
-    index, count = binary_search(arr, number)
-    print("index: {}, iterations: {}".format(index, count))
+    print(binary_search(arr, 7))
+    print(binary_search(arr, 70))
+    print(binary_search(arr, -70))
