@@ -1,23 +1,38 @@
-# programming
+# Description
 
-Этот репозиторий хранит примеры кода, которые я разобрал в ходе обучения
-программированию.
+This repository includes programming examples for interview preparation.
 
 # C++
 
-| Название         | Status |
-| ---------------- | ------ |
-| Стандарты        | +      |
-| Многопоточность  | +      |
-| Exception safety | +      |
-| Вопросы          | +      |
+| Name                | Status |
+| ------------------- | ------ |
+| Standarts           | +      |
+| Multithreading      | +      |
+| Exception safety    | +      |
+| Interview questions | +      |
+| DSA                 | +      |
+| SOLID               | +      |
+| OOD                 | +      |
+| GOF                 | -      |
+| CppCoreGuidelines   | -      |
+| Theory              | -      |
 
-# Алгоритмы и структуры данных
+# Python
 
-| Название             | Status     |
+| Name   | Status |
+| ------ | ------ |
+| Theory | -      |
+| DSA    | +      |
+| SOLID  | +      |
+| OOD    | +      |
+| GOF    | -      |
+
+# Data structures & Algorithms (DSA)
+
+| Name                 | Status     |
 | -------------------- | ---------- |
 | binary serch         | C++/Python |
-| binary tree          | C++/Python |
+| binary search tree   | C++/Python |
 | bubble sort          | C++/Python |
 | cache func           | C++/Python |
 | doubly linked list   | C++        |
@@ -44,27 +59,25 @@
 | sliding_window       | Python     |
 | trie                 | Python     |
 
-# Дизайн программ
+# Software design
 
-| Название | Status     |
-| -------- | ---------- |
-| SOLID    | C++        |
-| OOD      | C++/Python |
+| Name  | Status     |
+| ----- | ---------- |
+| SOLID | C++        |
+| OOD   | C++/Python |
 
 # Dev container
 
-Этот репозиторий содержит докер контейнер для разработки. Я пользуюсь vscode
-расширением devcontainer.
+For running code examples, i use the devcontainer vscode extension.
 
 # TODO
 
-1. Сделать описание репозитория
-2. Добавить примеры паттернов GOF
-3. Python базовый
-   https://neetcode.io/courses/lessons/python-for-coding-interviews
-4. GOF https://neetcode.io/courses/lessons/8-design-patterns
-5. Bash
-6. CMake
+1. Complete the repository description
+2. Python3 basics
+3. GOF
+4. Bash
+5. CMake
+6. CI/CD for this repo
 
 # License
 

@@ -1,6 +1,4 @@
 """
-a* -- алгоритм поиска кратчайшего пути в графе
-
 ref https://www.101computing.net/a-star-search-algorithm/
 """
 

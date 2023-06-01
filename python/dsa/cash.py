@@ -1,13 +1,4 @@
-"""
-кэширование -- процесс запонимания результатов работы
- функций для повторного использования и экономии ресурсов
-
-Описание;
-Создается таблица результатов вызовов функции.
-Если следующий вызов функции с аргументом x найден в таблице,
-то берем значение из таблицы, если не найдено,
-то вычисляем значение функции и заносим в таблицу кэша
-"""
+# /usr/bin/env python3
 
 import time
 
@@ -24,24 +15,22 @@ def factorial(n):
 
 
 if __name__ == "__main__":
-    "без кэшиования"
     result = 0
     start = time.time()
     values = [1000, 2000, 3000, 4000, 5000, 6000, 1000, 2000, 3000, 4000]
     for x in values:
         result += factorial(x)
     end = time.time() - start
-    print("Время без кэширования", end)
-    "с кэшированием"
+    print(end)
     cash = {}
     result = 0
     start = time.time()
     for x in values:
         if not (x in cash):
             cash[x] = factorial(x)
-            print("вычисления")
+            print("calculation")
         else:
-            print("кэш")
+            print("cash")
         result += cash[x]
     end = time.time() - start
-    print("Время с кэшированием", end)
+    print(end)

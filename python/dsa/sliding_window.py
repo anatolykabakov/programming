@@ -1,3 +1,5 @@
+# /usr/bin/env python3
+
 # return subarray containing largest sum
 
 # Time: O(n)
