@@ -15,16 +15,16 @@ This repository includes programming examples for interview preparation.
 | OOD                 | +      |
 | GOF                 | -      |
 | CppCoreGuidelines   | -      |
-| Theory              | -      |
+| Basics              | -      |
 
 # Python
 
 | Name   | Status |
 | ------ | ------ |
-| Theory | -      |
 | DSA    | +      |
 | SOLID  | +      |
 | OOD    | +      |
+| Basics | -      |
 | GOF    | -      |
 
 # Data structures & Algorithms (DSA)

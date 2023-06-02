@@ -16,14 +16,21 @@ void selection_sort(std::vector<int>& array)
   }
 }
 
+std::ostream& operator<<(std::ostream& os, const std::vector<int>& arr)
+{
+  for (const auto& item : arr) {
+    std::cout << item << " ";
+  }
+  std::cout << std::endl;
+  return os;
+}
+
 int main()
 {
-  std::vector<int> array = {0, 3, 2, 1, 4, 5};
-
+  std::vector<int> array = {0, 3, 2, 5, 6, 8, 1, 9, 4, 2, 1, 2, 9, 6, 4, 1, 7, -1, -5, 23, 6, 2, 35, 6, 3, 32};
+  std::cout << array << std::endl;
   selection_sort(array);
-  for (const auto& item : array) {
-    std::cout << item << std::endl;
-  }
+  std::cout << array << std::endl;
 
   return 0;
 }

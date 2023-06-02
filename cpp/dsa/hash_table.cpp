@@ -10,8 +10,8 @@ public:
     value_ = v;
     next = nullptr;
   }
-  int get_key() { return key_; }
-  int get_value() { return value_; }
+  int key() const { return key_; }
+  int value() const { return value_; }
   void change_value(int value) { value_ = value; }
 
 private:
@@ -44,7 +44,7 @@ public:
       while (el->next) {
         el = el->next;
       }
-      if (el->get_key() == k) {
+      if (el->key() == k) {
         el->change_value(v);
       } else {
         el->next = new HashTableEntry(k, v);
@@ -57,7 +57,7 @@ public:
     int index = hash_function_(k);
 
     HashTableEntry* el = array_[index];
-    while (el && el->get_key() != k) {
+    while (el && el->key() != k) {
       el = el->next;
     }
     return el;  // return nullptr or HashTableEntry*
@@ -69,12 +69,12 @@ public:
     if (array_[index] != nullptr) {
       HashTableEntry* el = array_[index];
       HashTableEntry* prev = nullptr;
-      while (el->next && el->get_key() != k) {
+      while (el->next && el->key() != k) {
         prev = el;
         el = el->next;
       }
 
-      if (el->get_key() == k) {
+      if (el->key() == k) {
         if (prev == nullptr) {
           HashTableEntry* next = el->next;
           delete el;
@@ -111,7 +111,7 @@ int main()
   HashTable hash_table(1);
   hash_table.insert(1, 2);
   HashTableEntry* p = hash_table.get(1);
-  std::cout << "key " << p->get_key() << " value " << p->get_value() << std::endl;
+  std::cout << "key " << p->key() << " value " << p->value() << std::endl;
   hash_table.remove(1);
   p = hash_table.get(1);
   assert(p == nullptr);
