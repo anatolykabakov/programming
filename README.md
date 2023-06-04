@@ -24,7 +24,7 @@ This repository includes programming examples for interview preparation.
 | DSA    | +      |
 | SOLID  | +      |
 | OOD    | +      |
-| Basics | -      |
+| Basics | +      |
 | GOF    | -      |
 
 # Data structures & Algorithms (DSA)
@@ -73,11 +73,10 @@ For running code examples, i use the devcontainer vscode extension.
 # TODO
 
 1. Complete the repository description
-2. Python3 basics
-3. GOF
-4. Bash
-5. CMake
-6. CI/CD for this repo
+2. GOF
+3. Bash
+4. CMake
+5. CI/CD for this repo
 
 # License
 
