@@ -1,10 +1,10 @@
 #include <cassert>
 #include <iostream>
 
-class HashTableEntry {
+class Pair {
 public:
-  HashTableEntry* next;
-  HashTableEntry(int k, int v)
+  Pair* next;
+  Pair(int k, int v)
   {
     key_ = k;
     value_ = v;
@@ -19,16 +19,16 @@ private:
   int value_;
 };
 /**
- * @brief HashTable is data structure which is used to store key value pairs.
+ * @brief HashMap is data structure which is used to store key value pairs.
  * @ref
  * https://www.tutorialspoint.com/cplusplus-program-to-implement-hash-tables-chaining-with-list-heads
  *
  */
-class HashTable {
+class HashMap {
 public:
-  HashTable(int size) : size_(size)
+  HashMap(int size) : size_(size)
   {
-    array_ = new HashTableEntry*[size_];
+    array_ = new Pair*[size_];
     for (int i = 0; i < size_; ++i) {
       array_[i] = nullptr;
     }
@@ -38,57 +38,55 @@ public:
   {
     int index = hash_function_(k);
     if (array_[index] == nullptr) {
-      array_[index] = new HashTableEntry(k, v);
+      array_[index] = new Pair(k, v);
     } else {
-      HashTableEntry* el = array_[index];
+      Pair* el = array_[index];
       while (el->next) {
         el = el->next;
       }
       if (el->key() == k) {
         el->change_value(v);
       } else {
-        el->next = new HashTableEntry(k, v);
+        el->next = new Pair(k, v);
       }
     }
   }
 
-  HashTableEntry* get(int k)
+  Pair* get(int k)
   {
     int index = hash_function_(k);
 
-    HashTableEntry* el = array_[index];
+    Pair* el = array_[index];
     while (el && el->key() != k) {
       el = el->next;
     }
-    return el;  // return nullptr or HashTableEntry*
+    return el;  // return nullptr or Pair*
   }
 
   void remove(int k)
   {
     int index = hash_function_(k);
     if (array_[index] != nullptr) {
-      HashTableEntry* el = array_[index];
-      HashTableEntry* prev = nullptr;
+      Pair* el = array_[index];
+      Pair* prev = nullptr;
       while (el->next && el->key() != k) {
         prev = el;
         el = el->next;
       }
 
       if (el->key() == k) {
+        Pair* next = el->next;
+        delete el;
         if (prev == nullptr) {
-          HashTableEntry* next = el->next;
-          delete el;
           array_[index] = next;
         } else {
-          HashTableEntry* next = el->next;
-          delete el;
           prev->next = next;
         }
       }
     }
   }
 
-  ~HashTable()
+  ~HashMap()
   {
     for (int i = 0; i < size_; ++i) {
       if (array_[i] != nullptr) {
@@ -99,7 +97,7 @@ public:
   }
 
 private:
-  HashTableEntry** array_;
+  Pair** array_;
   int size_;
 
 private:
@@ -108,9 +106,9 @@ private:
 
 int main()
 {
-  HashTable hash_table(1);
+  HashMap hash_table(1);
   hash_table.insert(1, 2);
-  HashTableEntry* p = hash_table.get(1);
+  Pair* p = hash_table.get(1);
   std::cout << "key " << p->key() << " value " << p->value() << std::endl;
   hash_table.remove(1);
   p = hash_table.get(1);

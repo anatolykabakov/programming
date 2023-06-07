@@ -2,7 +2,8 @@
 
 class Base {
 public:
-  virtual ~Base() { std::cout << "Hello from ~Base()" << std::endl; }
+  ~Base() { std::cout << "Hello from ~Base()" << std::endl; }
+  // virtual ~Base() { std::cout << "Hello from ~Base()" << std::endl; }
 };
 
 class Derived : public Base {

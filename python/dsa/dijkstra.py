@@ -18,9 +18,8 @@ def dijkstra(graph, start, end):
     processed = []
     neighbors = {}
     for node in graph.keys():
-        if node != start:
-            cost = 1000000
-        else:
+        cost = 1000000
+        if node == start:
             cost = 0
         costs[node] = cost
         path[node] = []

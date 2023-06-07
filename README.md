@@ -41,7 +41,8 @@ This repository includes programming examples for interview preparation.
 | breadth_first_search | C++/Python |
 | depth_first_search   | C++        |
 | dijkstra             | C++/Python |
-| hash_table           | C++        |
+| hash_map             | C++/Python |
+| hash_set             | Python     |
 | heap                 | C++        |
 | insertion_sort       | C++        |
 | linear_search        | C++/Python |
@@ -58,6 +59,10 @@ This repository includes programming examples for interview preparation.
 | kadanes              | Python     |
 | sliding_window       | Python     |
 | trie                 | Python     |
+| matrix_dfs           | Python     |
+| matrix_bfs           | Python     |
+| adj_list_dfs         | Python     |
+| adj_list_bfs         | Python     |
 
 # Software design
 
