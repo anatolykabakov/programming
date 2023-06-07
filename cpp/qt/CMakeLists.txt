@@ -15,12 +15,6 @@ endif()
 
 find_package(Qt5 COMPONENTS Widgets Core Gui REQUIRED)
 
-add_executable(
-  helloworld
-  # mainwindow.ui
-  # mainwindow.cpp
-  qt.cpp
-  # resources.qrc
-)
+add_executable(helloworld qt.cpp)
 
 target_link_libraries(helloworld Qt5::Widgets Qt5::Core Qt5::Gui)
