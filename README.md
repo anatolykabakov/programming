@@ -34,7 +34,7 @@ This repository includes programming examples for interview preparation.
 | binary serch         | C++/Python |
 | binary search tree   | C++/Python |
 | bubble sort          | C++/Python |
-| cache func           | C++/Python |
+| memoization          | C++/Python |
 | doubly linked list   | C++        |
 | dynamic array        | C++        |
 | dynamic programming  | C++        |
