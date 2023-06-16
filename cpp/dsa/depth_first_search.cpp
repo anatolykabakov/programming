@@ -38,19 +38,38 @@ void dfs_postorder(Node* root)
   std::cout << root->value << " ";
 }
 
+void dfs_inorder_iterative(Node* root)
+{
+  std::stack<Node*> s;
+  Node* cur = root;
+  while (cur || !s.empty()) {
+    if (cur) {
+      s.push(cur);
+      cur = cur->left;
+    } else {
+      cur = s.top();
+      s.pop();
+      std::cout << cur->value << " ";
+      cur = cur->right;
+    }
+  }
+}
+
 void dfs_preorder_iterative(Node* root)
 {
   std::stack<Node*> s;
-  s.push(root);
-  while (!s.empty()) {
-    Node* cur = s.top();
-    s.pop();
-    if (cur == nullptr) {
-      continue;
+  Node* cur = root;
+  while (cur || !s.empty()) {
+    if (cur) {
+      std::cout << cur->value << " ";
+      if (cur->right) {
+        s.push(cur->right);
+      }
+      cur = cur->left;
+    } else {
+      cur = s.top();
+      s.pop();
     }
-    std::cout << cur->value << " ";
-    s.push(cur->right);
-    s.push(cur->left);
   }
 }
 
@@ -68,6 +87,8 @@ int main()
   dfs_preorder(root);  // 4 3 2 6 5 7
   std::cout << std::endl;
   dfs_postorder(root);  // 2 3 5 7 6 4
+  std::cout << std::endl;
+  dfs_inorder_iterative(root);  // 2 3 4 5 6 7
   std::cout << std::endl;
   dfs_preorder_iterative(root);  // 4 3 2 6 5 7
   std::cout << std::endl;
