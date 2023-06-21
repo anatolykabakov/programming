@@ -2,7 +2,7 @@
 #include <iostream>
 #include <unordered_map>
 
-int simple_cached_func(std::function<int(int)> f, int arg)
+int memoization(std::function<int(int)> f, int arg)
 {
   static std::unordered_map<int, int> cache;
   if (cache.find(arg) != cache.end()) {
@@ -19,7 +19,7 @@ int fibonachi(int n)
 {
   if (n < 2)
     return n;
-  return simple_cached_func(fibonachi, n - 2) + simple_cached_func(fibonachi, n - 1);
+  return memoization(fibonachi, n - 2) + memoization(fibonachi, n - 1);
 }
 
 int main()
