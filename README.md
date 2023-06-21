@@ -13,7 +13,7 @@ This repository includes programming examples for interview preparation.
 | DSA                 | +      |
 | SOLID               | +      |
 | OOD                 | +      |
-| CppCoreGuidelines   | -      |
+| CppCoreGuidelines   | WIP    |
 | GOF                 | -      |
 | Basics              | -      |
 | CMake               | -      |
@@ -72,6 +72,7 @@ This repository includes programming examples for interview preparation.
 | two_pointers         | Python     |
 | prefix_sum           | Python     |
 | union_find           | Python     |
+| segment_tree         | Python     |
 
 # System design (High level design)
 
@@ -82,10 +83,12 @@ This repository includes programming examples for interview preparation.
 
 # Software design (Low level design)
 
-| Name  | Status     |
-| ----- | ---------- |
-| SOLID | C++        |
-| OOD   | C++/Python |
+| Name     | Status     |
+| -------- | ---------- |
+| Notes    | WIP        |
+| Examples | -          |
+| SOLID    | C++        |
+| OOD      | C++/Python |
 
 # Testing
 

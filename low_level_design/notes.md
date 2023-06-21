@@ -52,7 +52,9 @@ System:
 - Regular updates and maintenance to ensure the system remains functional and
   secure over time.
 
-# Objects & Classes
+# Identifying entities and relationships
+
+## Objects & Classes
 
 Обьект -- некоторая сущность, которая содержит информацию (data/information) и
 имеет поведение (behavior). Например, обьект машина содержит информацию о цвете,
@@ -69,7 +71,7 @@ Car
 - properties: 4 колеса, синий цвет
 - behavior: drive, stop, acceleration
 
-# Noun verb technique
+## Noun verb technique
 
 Это техника для конвертации проблем реального мира в классы. Нужно составить
 описание use case и выделить существительные noun и их поведения. Нужно выделить
@@ -93,7 +95,7 @@ Use case 1: Покупка товара на сайте
 доменной области, выделив существительные и их поведения, взаимодействия
 обьектов.
 
-# Classes relationship
+## Classes relationship
 
 Классы должны взаимодействовать таким образом, чтобы выполнять вариант
 использования use case. Существует два типа отнощение has is & is
