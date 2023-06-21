@@ -2,8 +2,8 @@
 
 template <typename T>
 struct myshared_ptr {
-  myshared_ptr() : ptr_(nullptr), ref_counter_{new std::size_t{0}} { std::cout << "myshared_ptr()" << std::endl; }
-  explicit myshared_ptr(T* ptr) : ptr_(ptr), ref_counter_{new std::size_t{1}}
+  myshared_ptr() : ptr_{nullptr}, ref_counter_{new std::size_t{0}} { std::cout << "myshared_ptr()" << std::endl; }
+  explicit myshared_ptr(T* ptr) : ptr_{ptr}, ref_counter_{new std::size_t{1}}
   {
     std::cout << "myshared_ptr(T *ptr)" << std::endl;
   }
@@ -69,6 +69,12 @@ private:
     }
   }
 };
+
+template <typename T, typename... Args>
+myshared_ptr<T> make_myshared(Args&&... args)
+{
+  return myshared_ptr<T>(new T(std::forward<T>(args)...));
+}
 
 struct A {
   A(int data) : data_{data} { std::cout << "A()" << std::endl; }
