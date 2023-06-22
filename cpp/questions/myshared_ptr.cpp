@@ -3,14 +3,12 @@
 template <typename T>
 struct myshared_ptr {
   myshared_ptr() : ptr_{nullptr}, ref_counter_{new std::size_t{0}} { std::cout << "myshared_ptr()" << std::endl; }
-  explicit myshared_ptr(T* ptr) : ptr_{ptr}, ref_counter_{new std::size_t{1}}
+  myshared_ptr(T* ptr) : ptr_{ptr}, ref_counter_{new std::size_t{1}}
   {
     std::cout << "myshared_ptr(T *ptr)" << std::endl;
   }
-  myshared_ptr(const myshared_ptr& other)
+  myshared_ptr(const myshared_ptr& other) : ptr_{other.ptr_}, ref_counter_{other.ref_counter_}
   {
-    ptr_ = other.ptr_;
-    ref_counter_ = other.ref_counter_;
     if (other.ptr_ != nullptr) {
       ++(*ref_counter_);
     }
@@ -27,7 +25,7 @@ struct myshared_ptr {
     std::cout << "myshared_ptr& operator=(const myshared_ptr& other)" << std::endl;
     return *this;
   }
-  myshared_ptr(myshared_ptr&& other)
+  myshared_ptr(myshared_ptr&& other) noexcept
   {
     std::swap(ptr_, other.ptr_);
     std::swap(ref_counter_, other.ref_counter_);
@@ -35,7 +33,7 @@ struct myshared_ptr {
     other.ref_counter_ = nullptr;
     std::cout << "myshared_ptr(const myshared_ptr&& other)" << std::endl;
   }
-  myshared_ptr& operator=(myshared_ptr&& other)
+  myshared_ptr& operator=(myshared_ptr&& other) noexcept
   {
     cleanup_();
     std::swap(ptr_, other.ptr_);
@@ -45,7 +43,7 @@ struct myshared_ptr {
     std::cout << "myshared_ptr& operator=(myshared_ptr&& other)" << std::endl;
     return *this;
   }
-  ~myshared_ptr()
+  ~myshared_ptr() noexcept
   {
     std::cout << "~myshared_ptr()" << std::endl;
     if (ref_counter_)

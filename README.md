@@ -97,6 +97,18 @@ This repository includes programming examples for interview preparation.
 | MOCK | -      |
 | UNIT | -      |
 
+# Problem solving
+
+| Name  | Status |
+| ----- | ------ |
+| notes | WIP    |
+
+# LeetCode patterns
+
+| Name  | Status |
+| ----- | ------ |
+| notes | WIP    |
+
 # Dev container
 
 For running code examples, i use the devcontainer vscode extension.
