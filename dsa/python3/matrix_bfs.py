@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-Q: Find the length of the shortest path from top left of the grid to the bottom right.
-"""
 # Time O(N*M)
 def bfs(matrix, r, c, visited):
     nrows, ncols = len(matrix), len(matrix[0])
@@ -35,6 +32,7 @@ def bfs(matrix, r, c, visited):
 
 
 if __name__ == "__main__":
+    # Q: Find the length of the shortest path from top left of the grid to the bottom right.
     matrix = [[0, 0, 0, 0], [1, 1, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0]]
     visited = [[False] * len(matrix) for _ in range(len(matrix))]
     unique_paths = bfs(matrix, 0, 0, visited)

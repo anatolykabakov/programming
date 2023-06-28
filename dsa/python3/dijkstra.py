@@ -1,57 +1,98 @@
-# /usr/bin/env python3
+#!/usr/bin/env python3
+import heapq
 
-
-def find_node_lowest_cost(costs, processed):
-    lowest_cost = 1000000
-    lowest_node = None
-    for node in costs.keys():
-        cost = costs[node]
-        if (cost < lowest_cost) and not (node in processed):
-            lowest_cost = cost
-            lowest_node = node
-    return lowest_node
-
-
-def dijkstra(graph, start, end):
-    path = {}
-    costs = {}
-    processed = []
-    neighbors = {}
-    for node in graph.keys():
-        cost = 1000000
-        if node == start:
-            cost = 0
-        costs[node] = cost
-        path[node] = []
-
-    minimal_cost_node = start
-    path[minimal_cost_node] = [start]
-
-    while minimal_cost_node:
-        if minimal_cost_node == end:
+# Time O(n*n)
+def shortest_path(graph, src, dst):
+    costs = {w: 1000 for w in graph}
+    paths = {w: [] for w in graph}
+    visit = []
+    costs[src] = 0
+    paths[src] = [src]
+    while src:
+        visit.append(src)
+        if src == dst:
             break
-        cost = costs[minimal_cost_node]
-        neighbors = graph[minimal_cost_node]
-        for node in neighbors.keys():
-            new_cost = cost + neighbors[node]
-            if new_cost < costs[node]:
-                costs[node] = new_cost
-                path[node] = path[minimal_cost_node] + [node]
 
-        processed.append(minimal_cost_node)
-        minimal_cost_node = find_node_lowest_cost(costs, processed)
-    return path[end]
+        if src not in graph:
+            raise Exception("node not exist!")
+
+        # Refresh the cost of neighbor nodes
+        for node, w in graph[src]:
+            new_cost = costs[src] + w
+            if new_cost < costs[node] and node not in visit:
+                costs[node] = new_cost
+                paths[node] = paths[src] + [node]
+
+        # Choose unvisited node with lowest cost
+        min_cost_node = None
+        min_cost = 1000
+        for node, cost in costs.items():
+            if min_cost > cost and node not in visit:
+                min_cost = cost
+                min_cost_node = node
+
+        src = min_cost_node
+    return paths[src]
+
+
+# Time O(ElogE) E -- edges number
+def shortest_path_optimized(graph, src, dst):
+    min_heap = [[0, src, [src]]]
+    paths = {}
+    visit = []
+    while min_heap:
+        cost, node, path = heapq.heappop(min_heap)
+        visit.append(node)
+        paths[node] = path
+        if node == dst:
+            break
+
+        if src not in graph:
+            raise Exception("node not exist!")
+
+        for neighbor, w in graph[node]:
+            if neighbor not in visit:
+                heapq.heappush(min_heap, [cost + w, neighbor, paths[node] + [neighbor]])
+    return paths[dst]
+
+
+def build_graph(edges):
+    graph = {}
+    for s, d, w in edges:
+        if s not in graph:
+            graph[s] = []
+        if d not in graph:
+            graph[d] = []
+        graph[s].append([d, w])
+    return graph
 
 
 if __name__ == "__main__":
-    graph = {
-        "a": {"b": 2, "c": 1},
-        "b": {"f": 7},
-        "c": {"d": 5, "e": 2},
-        "d": {"f": 2},
-        "e": {"f": 1},
-        "f": {"g": 1},
-        "g": {},
-    }
-    result = dijkstra(graph, start="a", end="g")
-    print(result)
+    # Q: Find the shortest path from source to destination node in graph.
+    edges = [
+        ["A", "B", 10],
+        ["A", "C", 3],
+        ["B", "D", 2],
+        ["C", "B", 4],
+        ["C", "D", 8],
+        ["C", "E", 2],
+        ["D", "E", 5],
+    ]
+    graph = build_graph(edges)
+    print(shortest_path(graph, "A", "D"))  # ['A', 'C', 'B', 'D']
+    print(shortest_path(graph, "C", "D"))  # ['C', 'B', 'D']
+    print(shortest_path(graph, "D", "D"))  # ['D']
+    print(shortest_path(graph, "A", "C"))  # ['A', 'C']
+    try:
+        print(shortest_path(graph, "AA", "CC"))
+    except:
+        print("oops")
+
+    print(shortest_path_optimized(graph, "A", "D"))  # ['A', 'C', 'B', 'D']
+    print(shortest_path_optimized(graph, "C", "D"))  # ['C', 'B', 'D']
+    print(shortest_path_optimized(graph, "D", "D"))  # ['D']
+    print(shortest_path_optimized(graph, "A", "C"))  # ['A', 'C']
+    try:
+        print(shortest_path(graph, "AA", "CC"))
+    except:
+        print("oops")
