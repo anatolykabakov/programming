@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import unittest
 
 
 class Node:
@@ -9,14 +10,45 @@ class Node:
 
 
 class BST:
-    def __init__(self):
-        self.__root = None
+    """
+    The binary search tree (BST) is data structure used to handle ordered distinct elements. Contains operations
+    insert, search and remove with time complexity O(logn) for balanced tree, in worst case O(n). A binary search tree
+    has property that for each node in the tree that has value, the value in the left child node must be smaller, the
+    value in the right child node must be greater.
+    """
+
+    def __init__(self, nums=[]):
+        self._root = None
+        for num in nums:
+            self.insert(num)
+
+    """
+    Method creates the Node with value and insert into BST.
+    If value is dublicated, false is returned.
+    """
 
     def insert(self, value):
-        self.__root = self._insert_recursive(self.__root, value)
+        self._root = self._insert_recursive(self._root, value)
+
+    """
+    Method search the Node with value and remove it from BST.
+    """
 
     def remove(self, value):
-        self.__root = self._remove_recursive(self.__root, value)
+        self._root = self._remove_recursive(self._root, value)
+
+    def search(self, value):
+        node = self._search_recursive(self._root, value)
+        return True if node is not None else False
+
+    def _search_recursive(self, root, value):
+        if root is None:
+            return None
+        if root.value < value:
+            return self._search_recursive(root.right, value)
+        elif root.value > value:
+            return self._search_recursive(root.left, value)
+        return root
 
     def _remove_recursive(self, root, value):
         if root is None:
@@ -51,8 +83,12 @@ class BST:
             root.left = self._insert_recursive(root.left, value)
         return root
 
+    """
+    Returns the root of tree.
+    """
+
     def root(self):
-        return self.__root
+        return self._root
 
 
 def print_bst(root):
@@ -63,14 +99,37 @@ def print_bst(root):
     print_bst(root.right)
 
 
+class BSTTest(unittest.TestCase):
+    def setUp(self):
+        self.testdata = [4, 3, 6, 2, 5, 7]
+        self.bst = BST(self.testdata)
+
+    def test_insert(self):
+        self.bst.insert(8)
+        self.assertTrue(self.bst.search(8))
+
+    def test_search(self):
+        for num in self.testdata:
+            self.assertTrue(self.bst.search(num))
+
+        self.assertFalse(self.bst.search(88))
+
+    def test_remove(self):
+        self.bst.remove(4)
+        self.bst.remove(3)
+        self.bst.remove(2)
+
+        self.assertFalse(self.bst.search(4))
+        self.assertFalse(self.bst.search(3))
+        self.assertFalse(self.bst.search(2))
+
+        self.assertTrue(self.bst.search(6))
+        self.assertTrue(self.bst.search(5))
+        self.assertTrue(self.bst.search(7))
+
+
 if __name__ == "__main__":
-    bst = BST()
-    bst.insert(4)
-    bst.insert(3)
-    bst.insert(5)
-    bst.insert(2)
+    bst = BST([4, 3, 6, 2, 5, 7])
     print_bst(bst.root())
-    bst.remove(4)
-    bst.remove(3)
-    bst.remove(2)
-    print_bst(bst.root())
+
+    unittest.main()

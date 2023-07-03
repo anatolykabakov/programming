@@ -4,7 +4,7 @@ from collections import defaultdict
 
 def topological_sort(edges):
     visit = set()
-    path = set()
+    cycle = set()
     nodes = []
 
     graph = defaultdict(list)
@@ -16,15 +16,15 @@ def topological_sort(edges):
         graph[u].append(v)
 
     def dfs(node):
-        if node in path:
+        if node in cycle:
             return False
         if node in visit:
             return True
         visit.add(node)
-        path.add(node)
+        cycle.add(node)
         for neighbor in graph[node]:
             dfs(neighbor)
-        path.remove(node)
+        cycle.remove(node)
         nodes.append(node)
         return True
 

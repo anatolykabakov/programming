@@ -67,9 +67,9 @@ resource.
 | Search               |                | -           |
 | linear_search        | C++/Python     | +           |
 | binary search        | C++/Python     | +           |
-| binary search tree   | C++/Python     | -           |
-| breadth_first_search | C++/Python     | -           |
-| depth_first_search   | C++            | -           |
+| binary search tree   | C++/Python     | +           |
+| breadth_first_search | C++/Python     | +           |
+| depth_first_search   | C++            | +           |
 | dijkstra             | C++/Python     | -           |
 | astar                | Python         | -           |
 | matrix_dfs           | Python         | -           |
