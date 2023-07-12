@@ -23,11 +23,11 @@ int c(T&& x)
 int main()
 {
   int var = 1;
-  a(var); // "foo(int&)"
-  b(var); // foo(int&&)
-  c(var); // foo(int&)
-  a(1); // foo(int&)
-  b(1); // foo(int&&)
-  c(1); // foo(int&&)
+  a(var);  // "foo(int&)"
+  b(var);  // foo(int&&)
+  c(var);  // foo(int&)
+  a(1);    // foo(int&)
+  b(1);    // foo(int&&)
+  c(1);    // foo(int&&)
   return 0;
 }
