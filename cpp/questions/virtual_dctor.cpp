@@ -8,16 +8,12 @@ public:
 
 class Derived : public Base {
 public:
-  virtual ~Derived()
-  {
-    // Здесь могла бы быть очистка ресурсов
-    std::cout << "Hello from ~Derived()" << std::endl;
-  }
+  virtual ~Derived() { std::cout << "Hello from ~Derived()" << std::endl; }
 };
 
 int main()
 {
   Base* b = new Derived();
-  delete b;
+  delete b;  // Hello from ~Base()
   return 0;
-}
+}  // leak

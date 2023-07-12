@@ -4,7 +4,7 @@
 
   "service": "dev_container",
   "runServices": ["dev_container"],
-  "workspaceFolder": "/workspace/dev_container",
+  "workspaceFolder": "/workspace/",
 
   "extensions": [
     "ms-vscode.cpptools",
@@ -14,5 +14,6 @@
     "cschlosser.doxdocgen"
   ]
 
-  //"initializeCommand": "xhost +local:docker"
+  // "initializeCommand": "xhost +"
+  // "initializeCommand": "xhost +local:docker"
 }

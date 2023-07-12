@@ -1,0 +1,14 @@
+name: CI pipeline
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ununtu-20.04
+    steps:
+      - name: pre-commit check
+        run: pre-commit check
+      - name: build
+        run: echo build code
+      - name: tests
+        run: echo tests
+      - name: deployment
+        run: echo deployment
