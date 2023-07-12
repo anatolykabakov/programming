@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-Q: Count the unique paths from the top left to the bottom right.
-A single path may only move along 0's and can't visit the same cell more than once.
-"""
 # Time O(4^N*M)
 def dfs(matrix, r, c, visited):
     nrows, ncols = len(matrix), len(matrix[0])
@@ -33,6 +29,8 @@ def dfs(matrix, r, c, visited):
 
 
 if __name__ == "__main__":
+    # Q: Count the unique paths from the top left to the bottom right.
+    # A single path may only move along 0's and can't visit the same cell more than once.
     matrix = [[0, 0, 0, 0], [1, 1, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0]]
     visited = [[False] * len(matrix) for _ in range(len(matrix))]
     unique_paths = dfs(matrix, 0, 0, visited)
