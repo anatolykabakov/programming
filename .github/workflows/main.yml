@@ -2,11 +2,15 @@ name: CI pipeline
 on: push
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Install deps
-        run: pre-commit check
-      - name: build
-        run: echo build code
+        run: |
+          apt-get -y install \
+            python3-pip clang-format \
+            build-essential gdb cmake cppcheck
+          pip3 install pre-commit cmakelang
+      - name: link
+        run: pre-commit run --all-files
