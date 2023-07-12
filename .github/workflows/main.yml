@@ -2,7 +2,7 @@ name: CI pipeline
 on: workflow_dispatch
 jobs:
   build:
-    runs-on: ununtu-20.04
+    runs-on: ununtu-latest
     steps:
       - name: pre-commit check
         run: pre-commit check
