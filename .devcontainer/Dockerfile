@@ -5,12 +5,13 @@ FROM mcr.microsoft.com/vscode/devcontainers/base:0-${VARIANT}
 # property in devcontainer.json to use it. On Linux, the container user's GID/UIDs
 # will be updated to match your local UID/GID (when using the dockerFile property).
 # See https://aka.ms/vscode-remote/containers/non-root-user for details.
-ARG USERNAME=vscode
+ARG USERNAME=devel
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-ARG WORKSPACE=dev_container
-WORKDIR /workspace/$WORKSPACE
+# ARG WORKSPACE=dev_container
+# WORKDIR /workspace/$WORKSPACE
+WORKDIR /workspace/
 
 ENV TERM xterm
 ENV SHELL /bin/zsh
@@ -24,6 +25,7 @@ RUN apt-get update \
     # Linux tools : Python is used to install conan
     git zip unzip python3-pip clang-format \
     build-essential gdb cmake cppcheck \
+    valgrind kcachegrind \
     #
     # [Optional] Update UID/GID if needed
     && if [ "$USER_GID" != "1000" ] || [ "$USER_UID" != "1000" ]; then \

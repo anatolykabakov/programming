@@ -1,4 +1,4 @@
-# Desing Rate Limiter
+# Desing URL Shortener service
 
 ## Background
 
@@ -64,4 +64,7 @@ https://www.geeksforgeeks.org/how-to-design-a-tiny-url-or-url-shortener/
 
 https://www.docker.com/blog/how-to-build-and-deploy-a-django-based-url-shortener-app-from-scratch/
 
-https://www.docker.com/blog/how-to-build-and-deploy-a-django-based-url-shortener-app-from-scratch/
+Реализация на go https://www.youtube.com/watch?v=rCJvW2xgnk0
+
+Реализация python
+https://www.youtube.com/watch?v=YI16KWyA3M0&list=LL&index=2&t=1389s

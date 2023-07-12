@@ -12,5 +12,3 @@ jobs:
         run: echo tests
       - name: deployment
         run: echo deployment
-    
-    
