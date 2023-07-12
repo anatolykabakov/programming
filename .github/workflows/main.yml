@@ -1,16 +1,12 @@
 name: CI pipeline
 on: push
 jobs:
-  build:
+  lint:
     runs-on: ununtu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      - name: pre-commit check
+      - name: Install deps
         run: pre-commit check
       - name: build
         run: echo build code
-      - name: tests
-        run: echo tests
-      - name: deployment
-        run: echo deployment
