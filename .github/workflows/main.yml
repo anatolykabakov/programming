@@ -1,9 +1,11 @@
 name: CI pipeline
-on: workflow_dispatch
+on: push
 jobs:
   build:
     runs-on: ununtu-20.04
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: pre-commit check
         run: pre-commit check
       - name: build
