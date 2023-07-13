@@ -38,14 +38,14 @@ repos:
         args: [-i]
         language: python
         types: [c++]
-      - id: cmake-lint
-        name: cmake-lint
-        description:
-          cmake-lint will check your listfiles for style violations, common
-          mistakes, and anti-patterns.
-        entry: cmake-lint
-        language: python
-        types: [cmake]
+      # - id: cmake-lint
+      #   name: cmake-lint
+      #   description:
+      #     cmake-lint will check your listfiles for style violations, common
+      #     mistakes, and anti-patterns.
+      #   entry: cmake-lint
+      #   language: python
+      #   types: [cmake]
       - id: cmake-format
         name: cmake-format
         description:

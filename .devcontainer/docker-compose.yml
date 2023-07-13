@@ -9,7 +9,8 @@ services:
     tty: true
     network_mode: "host"
     volumes:
-      - ../..:/workspace/
+      - ../..:/data
+      - ..:/workspace/
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     environment:
       - QT_X11_NO_MITSHM=1

@@ -1,4 +1,4 @@
-name: CI pipeline
+name: workflow
 on: push
 jobs:
   lint:
@@ -14,3 +14,30 @@ jobs:
           pip3 install pre-commit cmakelang
       - name: lint
         run: pre-commit run --all-files
+  test:
+    needs: [lint]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: test
+        run: |
+          mkdir build && cd build
+          cmake -DBUILD_TYPE=Release -DBUILD_TESTS=ON  ..  && cmake --build .
+          ctest --output-or-failure
+  deploy:
+    needs: [test]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Build artifacts
+        run: |
+          mkdir build && cd build
+          cmake -DBUILD_TYPE=Release ..  && cmake --build .
+          cpack
+      - name: Upload static artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: static_artifacts
+          path: build/*.deb
