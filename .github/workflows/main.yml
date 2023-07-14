@@ -57,6 +57,7 @@ jobs:
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_COVERAGE=ON ..
           cmake --build . --target all -- -j8
-      - name:
-          Generate report lcov -c -d . -o main_coverage.info genhtml
+      - name: Generate report
+        run: |
+          lcov -c -d . -o main_coverage.info genhtml
           main_coverage.info --output-directory out
