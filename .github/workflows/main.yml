@@ -47,11 +47,13 @@ jobs:
           name: static_artifacts
           path: build/*.deb
   coverage:
-    needs: [test]
+    needs: test
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - name: Install deps
+        run: sudo apt-get -y install lcov
       - name: Build
         run: |
           mkdir build && cd build
@@ -59,5 +61,5 @@ jobs:
           cmake --build . --target all -- -j8
       - name: Generate report
         run: |
-          lcov -c -d . -o main_coverage.info genhtml
-          main_coverage.info --output-directory out
+          lcov -c -d . -o main_coverage.info
+          genhtml main_coverage.info --output-directory out
