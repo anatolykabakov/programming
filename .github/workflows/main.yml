@@ -23,11 +23,16 @@ jobs:
       - name: test
         run: |
           mkdir build && cd build
-          cmake -DBUILD_TYPE=Release -DBUILD_TESTS=ON  ..  && cmake --build .
+          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON \
+          -DENABLE_COVERAGE=ON \
+          -DENABLE_SANITIZER_ADDRESS=OFF -DENABLE_SANITIZER_LEAK=OFF \
+          -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=OFF ..
+          cmake --build . --target all -- -j8
           ctest --output-or-failure
   deploy:
     needs: [test]
     runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/master'
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
