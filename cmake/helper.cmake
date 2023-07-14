@@ -1,9 +1,12 @@
 include(CMakeParseArguments)
+# cmake-lint: disable=C0103,R0912
+
 #cpack configuration
-# cmake-lint: disable=C0103
 function(setup_cpack)
   set(oneValueArgs MAINTAINER DESCRIPTION DEPENDENCIES)
-  cmake_parse_arguments(SETUP_CPACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+  cmake_parse_arguments(
+    SETUP_CPACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN}
+  )
   set(CPACK_DEB_COMPONENT_INSTALL ON)
   set(CPACK_PACKAGING_INSTALL_PREFIX "")
 
@@ -30,10 +33,14 @@ function(setup_cpack)
   include(CPack)
 endfunction()
 
+#optional sanitizers func
+# cmake-lint: disable=R0912
 function(add_optional_sanitizers target_name)
   set(one_value_args IS_INTERFACE)
 
-  cmake_parse_arguments(PARSE_ARGV 1 ADD_OPTIONAL_SANITIZERS "" "${one_value_args}" "")
+  cmake_parse_arguments(
+    PARSE_ARGV 1 ADD_OPTIONAL_SANITIZERS "" "${one_value_args}" ""
+  )
 
   if(${ADD_OPTIONAL_SANITIZERS_IS_INTERFACE})
     set(LINK_TYPE "INTERFACE")
@@ -41,7 +48,9 @@ function(add_optional_sanitizers target_name)
     set(LINK_TYPE "PRIVATE")
   endif()
 
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+     OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+  )
 
     set(SANITIZERS "")
 
@@ -55,24 +64,40 @@ function(add_optional_sanitizers target_name)
       list(APPEND SANITIZERS "leak")
     endif()
 
-    option(ENABLE_SANITIZER_UNDEFINED_BEHAVIOR "Enable undefined behavior sanitizer" OFF)
+    option(
+      ENABLE_SANITIZER_UNDEFINED_BEHAVIOR "Enable undefined behavior sanitizer"
+      OFF
+    )
     if(ENABLE_SANITIZER_UNDEFINED_BEHAVIOR)
       list(APPEND SANITIZERS "undefined")
     endif()
 
     option(ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
     if(ENABLE_SANITIZER_THREAD)
-      if("address" IN_LIST SANITIZERS OR "leak" IN_LIST SANITIZERS)
-        message(WARNING "Thread sanitizer does not work with Address and Leak sanitizer enabled")
+      if("address" IN_LIST SANITIZERS
+         OR "leak" IN_LIST SANITIZERS
+      )
+        message(
+          WARNING "Thread sanitizer does not work with Address
+            and Leak sanitizer enabled"
+        )
       else()
         list(APPEND SANITIZERS "thread")
       endif()
     endif()
 
     option(ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
-    if(ENABLE_SANITIZER_MEMORY AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-      if("address" IN_LIST SANITIZERS OR "thread" IN_LIST SANITIZERS OR "leak" IN_LIST SANITIZERS)
-        message(WARNING "Memory sanitizer does not work with Address, Thread and Leak sanitizer enabled")
+    if(ENABLE_SANITIZER_MEMORY
+       AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+    )
+      if("address" IN_LIST SANITIZERS
+         OR "thread" IN_LIST SANITIZERS
+         OR "leak" IN_LIST SANITIZERS
+      )
+        message(
+          WARNING "Memory sanitizer does not work with Address,
+             Thread and Leak sanitizer enabled"
+        )
       else()
         list(APPEND SANITIZERS "memory")
       endif()
@@ -84,17 +109,25 @@ function(add_optional_sanitizers target_name)
 
   if(LIST_OF_SANITIZERS)
     if(NOT "${LIST_OF_SANITIZERS}" STREQUAL "")
-      target_compile_options(${target_name} ${LINK_TYPE} -fsanitize=${LIST_OF_SANITIZERS})
-      target_link_options(${target_name} BEFORE ${LINK_TYPE} -fsanitize=${LIST_OF_SANITIZERS})
+      target_compile_options(
+        ${target_name} ${LINK_TYPE} -fsanitize=${LIST_OF_SANITIZERS}
+      )
+      target_link_options(
+        ${target_name} BEFORE ${LINK_TYPE} -fsanitize=${LIST_OF_SANITIZERS}
+      )
     endif()
   endif()
 
 endfunction()
 
+#optional coverage
 function(add_optional_coverage target_name)
+
   set(one_value_args IS_INTERFACE)
 
-  cmake_parse_arguments(PARSE_ARGV 1 ADD_OPTIONAL_COVERAGE "" "${one_value_args}" "")
+  cmake_parse_arguments(
+    PARSE_ARGV 1 ADD_OPTIONAL_COVERAGE "" "${one_value_args}" ""
+  )
 
   if(${ADD_OPTIONAL_COVERAGE_IS_INTERFACE})
     set(LINK_TYPE "INTERFACE")
@@ -102,12 +135,16 @@ function(add_optional_coverage target_name)
     set(LINK_TYPE "PRIVATE")
   endif()
 
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+     OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+  )
 
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" OFF)
 
     if(ENABLE_COVERAGE)
-      target_compile_options(${target_name} ${LINK_TYPE} --coverage -fprofile-arcs -ftest-coverage)
+      target_compile_options(
+        ${target_name} ${LINK_TYPE} --coverage -fprofile-arcs -ftest-coverage
+      )
       target_link_libraries(${target_name} ${LINK_TYPE} -lgcov --coverage)
     endif()
 

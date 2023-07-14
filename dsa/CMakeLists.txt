@@ -7,7 +7,10 @@ if(BUILD_TESTS)
   foreach(cpp_file ${CPP_FILES})
     get_filename_component(FILENAME ${cpp_file} NAME)
     string(REPLACE ".cpp" "" TARGETNAME ${FILENAME})
-    add_executable(${TARGETNAME} ${cpp_file})
+    add_executable(
+      ${TARGETNAME}
+      ${cpp_file}
+    )
     add_test(${TARGETNAME}Test ${TARGETNAME})
     add_optional_sanitizers(${TARGETNAME})
     add_optional_coverage(${TARGETNAME})
@@ -18,6 +21,9 @@ if(BUILD_TESTS)
   foreach(py_file ${PY_FILES})
     get_filename_component(FILENAME ${py_file} NAME)
     string(REPLACE ".py" "" TARGETNAME ${FILENAME})
-    add_test(NAME ${TARGETNAME}PythonTest COMMAND python3 ${py_file})
+    add_test(
+      NAME ${TARGETNAME}PythonTest
+      COMMAND python3 ${py_file}
+    )
   endforeach()
 endif()
