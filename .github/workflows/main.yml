@@ -28,7 +28,7 @@ jobs:
           -DENABLE_SANITIZER_ADDRESS=OFF -DENABLE_SANITIZER_LEAK=OFF \
           -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=OFF ..
           cmake --build . --target all -- -j8
-          ctest --output-or-failure
+          ctest --output-or-failure --verbose
   deploy:
     needs: [test]
     runs-on: ubuntu-20.04
