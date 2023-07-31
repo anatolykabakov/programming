@@ -22,6 +22,8 @@ jobs:
         uses: actions/checkout@v3
       - name: test
         run: |
+          git submodule init
+          git submodule update
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON \
           -DENABLE_COVERAGE=OFF \
