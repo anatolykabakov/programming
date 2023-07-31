@@ -57,7 +57,7 @@ jobs:
       - name: Build
         run: |
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_COVERAGE=ON ..
+          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DENABLE_COVERAGE=ON ..
           cmake --build . --target all -- -j8
       - name: Generate report
         run: |
