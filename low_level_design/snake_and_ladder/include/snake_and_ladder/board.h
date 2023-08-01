@@ -2,47 +2,37 @@
 #include <vector>
 
 /**
- * @brief Доска хранит состояние клеток. В клетке может быть змея, лестница или фишка.
- * На доске 10 змей и лестниц.
- * Начало лестницы на клетке меньше, чем конец.
- * Голова змеи на клетке больше, чем хвост змеи.
- *
- * У доски можно спросить: находится ли голова змеи в текущей позиции?
- * находится ли начало лестницы в текущей позиции?
- * вышел ли игрок за границы доски.
+ * @brief
+ * 1. The board solves the task of storing the state of the figures.
+ * 2. The board can report which position the player should move to if he got into a position with snake, ladder or out
+ * of the board.
  *
  */
 class Board {
 public:
   Board(int size);
   /**
-   * @brief Проверяет содержит ли позиция на доске голову змеи.
-   * Если да, то возвращает позицию хвоста змеи, иначе возвращает позицию;
-   *
-   * @param pos Позиция на доске
-   * @return int возвращает позицию хвоста змеи, иначе возвращает позицию;
+   * @brief Return position of snake tail, if player moved to position with snake head.
+   * @param pos Player position on the board.
+   * @return int Position of snake tail.
    */
-  int on_snake(int pos);
+  virtual int on_snake(int pos);
   /**
-   * @brief Проверяет содержит ли позиция на доске начало лестницы.
-   * Если да, то возвращает позицию хвоста змеи, иначе возвращает позицию;
-   *
-   * @param pos Позиция на доске
-   * @return int возвращает позицию хвоста змеи, иначе возвращает позицию;
+   * @brief Return position of ladder head, if player moved to position with ladder tail.
+   * @param pos Player position on the board.
+   * @return int Position of ladder head.
    */
-  int on_ladder(int pos);
+  virtual int on_ladder(int pos);
   /**
-   * @brief Проверяет входит ли позиция в размер доски.
-   * Если да, то возвращает позицию, иначе возвращает 100 - (позицию - 100);
-   *
-   * @param pos Позиция на доске
-   * @return Возвращает позицию, иначе возвращает 100 - (позицию - 100)
+   * @brief Return position by formula: size - (pos - size), if player moved to out the board.
+   * @param pos Player position on the board.
+   * @return int new position for player.
    */
-  int out_of_size(int pos);
+  virtual int out_of_size(int pos);
 
 private:
   int size_;
   std::vector<std::pair<int, int>> snakes_;
   std::vector<std::pair<int, int>> ladders_;
-  std::vector<std::vector<int>> ships_;
+  // std::vector<std::vector<int>> ships_;
 };

@@ -6,12 +6,21 @@
 #include "board.h"
 
 /**
- * Класс Game Отвечает за процесс игры - взаимодейвие доски, игроков, определение победителя.
+ * @brief The controller of the game -- managing the interaction of the players and the board, determine the winner.
  * */
 class Game {
 public:
+  /**
+   * @brief Construct a new Game object
+   *
+   * @param players Player.
+   */
   Game(const std::vector<Player>& players) : players_{players}, board_(100) {}
-
+  /**
+   * @brief Run the game.
+   *
+   * @return Player
+   */
   Player play();
 
 private:

@@ -14,37 +14,44 @@ Game rules:
    square with a snake tail.
 5. If a player moves to a square with a ladder tail, then the player moves to a
    square with a ladder head.
+6. Players are moved by queue.
+7. Player win, if first moved into the end of the board.
 
 The board: Size is 10 x 10. Contains 10 snakes and ladders. The head of the
 snake lies above the tail. The head of the ladder lies below the tail.
 
-## Non-functional
-
-# Entities & relationships
+# Entities & Relationships
 
 Entities: Player, Board, Game.
 
-Use case:
+## Board:
 
-1. Создаем доску, змеи и лестницы на доске, фишки игроков на клетке 0.
-2. Игрок бросает кубик.
-3. Игрок двигает фишку на N значений
-4. Если фишка оказалась в начале лесницы, то фишка передвигается в конец
-   лестницы
-5. Если фишка оказалась в голове змеи, то фишка передвигается в хвост змеи.
-6. Ход другого игрока
-7. Выигрывает игрок, который первым дошел до 100 позиции на доске.
+Responsibilities:
+1. The board solves the task of storing the state of the figures.
+2. The board can report which position the player should move to if he got into a position with snake, ladder or out of the board.
 
-Доска: Состояние: 100 квадратов, в каждом квадрате может быть фишка игрока,
-змея, лестница Поведение: Изменить состояние ячейки, узнать состояние ячейки,
+State: size, snakes positions, ladders positions, chips positions
 
-Змея: простая Лестница: простая Фишка: простая
+Behavior:
+1. Return position of snake tail, if player moved to position with snake head.
+2. Return position of ladder head, if player moved to position with ladder tail.
+3. Return position by formula: size - (pos - size), if player moved to out the board.
 
-Игрок: Состояние: id Действие: передвинуть фишку
+## Player:
 
-Игра: Состояние: Игроки, Доска Поведение: Добавить игрока, начать игру,
-определить победителя
+Responsibilities:
+1. Player solves the task of storing information and moves the ship on the board.
+2. The player can ask the board what position to move to if the player hits a snake head, the start of a ladder or goes out of bounds.
 
-Связи: Игрок может изменить состояние доски(передвинуть фишку). Игра может
-узнать состояние доски и сообщить о доп перемещении. Доска знает координаты
-фишек, змей и лестниц
+State: id, position on the board
+
+Behavior: move chip by game rules, say position on the board
+
+## Game:
+
+Responsibilities: The controller of the game -- managing the interaction of the players and the board, determine the winner.
+
+State: Players, Board
+
+Behavior: Players addition, run the game,
+determine the winner
