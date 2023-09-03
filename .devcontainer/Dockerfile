@@ -22,7 +22,6 @@ RUN apt-get update \
     #
     # Install
     && apt-get -y install \
-    # Linux tools : Python is used to install conan
     git zip unzip python3-pip clang-format \
     build-essential gdb cmake cppcheck \
     valgrind kcachegrind \

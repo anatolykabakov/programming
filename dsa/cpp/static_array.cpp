@@ -1,7 +1,7 @@
 #include <iostream>
 
 // Time O(1)
-int remove_end(int arr[], int length)
+void remove_end(int arr[], int length)
 {
   if (length > 0) {
     arr[length - 1] = 0;
@@ -9,7 +9,7 @@ int remove_end(int arr[], int length)
 }
 
 // Time O(1)
-int insert_end(int arr[], int length, int value)
+void insert_end(int arr[], int length, int value)
 {
   if (length > 0) {
     arr[length - 1] = value;

@@ -42,14 +42,22 @@ public:
 
 class Test2 {
 public:
-  Test2() { std::cout << "Test2()" << std::endl; }
+  Test2()
+  {
+    r_ = new X();
+    std::cout << "Test2()" << std::endl;
+  }
 
-  ~Test2()
+  ~Test2() noexcept(false)
   {
     std::cout << "~Test2()" << std::endl;
-    // throw std::logic_error("oops"); error std::terminate, because dtoc
+    throw std::logic_error("oops");  // error std::terminate, because dtoc
     // noexcept(true)
   }
+
+private:
+  X r;
+  X* r_;
 };
 
 int main()

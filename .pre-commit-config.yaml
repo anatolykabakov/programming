@@ -4,7 +4,6 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.0.1
     hooks:
-      # - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-case-conflict
@@ -15,19 +14,13 @@ repos:
     hooks:
       - id: black
         args: [-l 90]
-        additional_dependencies: ["click==8.0.4"] # TODO: Remove this line when upgrading black to 22.3.0+.
+        additional_dependencies: ["click==8.0.4"]
 
-  # - repo: https://github.com/timothycrosley/isort
-  #   rev: 5.10.1
+  # - repo: https://github.com/pre-commit/mirrors-prettier
+  #   rev: v2.5.1
   #   hooks:
-  #     - id: isort
-  #       args: [--profile, black, -l, "90", --lines-after-imports, "2"]
-
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v2.5.1
-    hooks:
-      - id: prettier
-        args: [--print-width=80, --prose-wrap=always]
+  #     - id: prettier
+  #       args: [--print-width=80, --prose-wrap=always]
 
   - repo: local
     hooks:

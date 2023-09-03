@@ -13,7 +13,7 @@ public:
     std::cout << "Bad()" << std::endl;
     std::cout << "open file" << std::endl;
     r = new Resource();
-    throw std::logic_error("except");
+    throw std::logic_error("except Bad");
   }
   ~Bad()
   {
@@ -23,6 +23,7 @@ public:
 
 private:
   Resource* r;
+  Resource rb;
 };
 
 class Good {
@@ -32,8 +33,9 @@ public:
     std::cout << "Good()" << std::endl;
     std::cout << "open file" << std::endl;
     r = std::make_unique<Resource>();
-    throw std::logic_error("except");
+    throw std::logic_error("except Good");
   }
+
   ~Good()
   {
     std::cout << "~Good()" << std::endl;
