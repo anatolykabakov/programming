@@ -147,8 +147,7 @@ For running code examples, i use the devcontainer vscode extension.
 # Build & test
 
 ```
-mkdir build && cd build
-cmake -DBUILD_TESTS=ON .. && cmake --build .
+cmake -DBUILD_TESTS=ON -B build && cmake --build build -j8
 ctest --output-or-failure --verbose
 ```
 

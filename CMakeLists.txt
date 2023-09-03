@@ -5,10 +5,16 @@ include(cmake/helper.cmake)
 
 if(BUILD_TESTS)
   enable_testing()
-  add_subdirectory(googletest)
+  add_subdirectory(thirdparty/googletest)
+  add_subdirectory(thirdparty/benchmark)
+
+  add_subdirectory(cpp/gtest)
+  add_subdirectory(cpp/gbenchmark)
 endif()
+
 add_subdirectory(dsa)
 add_subdirectory(low_level_design/snake_and_ladder)
+
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/dsa
   DESTINATION share/${PROJECT_NAME}

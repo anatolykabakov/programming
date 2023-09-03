@@ -51,6 +51,7 @@ jobs:
   coverage:
     needs: test
     runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/master'
     steps:
       - name: Checkout code
         uses: actions/checkout@v3

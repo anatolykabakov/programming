@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/low_level_design/snake_and_ladder/include"
+                "${workspaceFolder}/low_level_design/snake_and_ladder/include",
+                "${workspaceFolder}/thirdparty"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
