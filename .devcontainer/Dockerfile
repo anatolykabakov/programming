@@ -9,8 +9,6 @@ ARG USERNAME=devel
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-# ARG WORKSPACE=dev_container
-# WORKDIR /workspace/$WORKSPACE
 WORKDIR /workspace/
 
 ENV TERM xterm
@@ -48,7 +46,8 @@ RUN echo 'LC_NUMERIC="en_US.UTF-8"' >> /root/.zshrc
 
 RUN pip3 install conan pre-commit cmakelang
 RUN git config --global --add safe.directory /workspace
-RUN git submodule init
-RUN git submodule update --recursive --remote
 
 CMD ["zsh"]
+
+# RUN git submodule init
+# RUN git submodule update --recursive --remote
