@@ -5,10 +5,13 @@ include(cmake/helper.cmake)
 
 if(BUILD_TESTS)
   enable_testing()
+  
   add_subdirectory(thirdparty/googletest)
-  add_subdirectory(thirdparty/benchmark)
-
   add_subdirectory(cpp/gtest)
+  
+  set (BENCHMARK_ENABLE_INSTALL OFF)
+  set (BENCHMARK_ENABLE_TESTING OFF)
+  add_subdirectory(thirdparty/benchmark)
   add_subdirectory(cpp/gbenchmark)
 endif()
 

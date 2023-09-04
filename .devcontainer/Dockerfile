@@ -47,5 +47,8 @@ RUN echo "export DISABLE_AUTO_TITLE=true" >> /root/.zshrc
 RUN echo 'LC_NUMERIC="en_US.UTF-8"' >> /root/.zshrc
 
 RUN pip3 install conan pre-commit cmakelang
+RUN git config --global --add safe.directory /workspace
+RUN git submodule init
+RUN git submodule update --recursive --remote
 
 CMD ["zsh"]
