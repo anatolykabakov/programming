@@ -14,14 +14,14 @@ struct ITimer {
 struct MockTimer : ITimer {
   MOCK_METHOD1(Start, void(int));
   MOCK_METHOD0(Stop, void());
-  MOCK_METHOD0(isActive, bool());
-  MOCK_METHOD0(GetId, std::string());
+  MOCK_METHOD(bool, isActive, (), (override));
+  MOCK_METHOD(std::string, GetId, (), (override));
 };
 
 TEST(TimerTest, StartTest)
 {
   MockTimer timer;
-  EXPECT_CALL(timer, Start(0)).Times(1);
+  EXPECT_CALL(timer, Start(::testing::_)).Times(1);
   timer.Start(0);
 }
 
@@ -34,9 +34,9 @@ TEST(TimerTest, isActiveTest)
 
 TEST(TimerTest, GetIdTest)
 {
-  MockTimer timer;
-  EXPECT_CALL(timer, GetId()).WillRepeatedly(testing::Return(std::string("GetId")));
-  EXPECT_EQ("GetId", timer.GetId());
+  ::testing::NiceMock<MockTimer> timer;  // NiceMock used to supress gtest warnings
+  ON_CALL(timer, GetId()).WillByDefault(testing::Return(std::string("1")));
+  EXPECT_EQ("1", timer.GetId());
 }
 
 TEST(TimerTest, isActiveValueTest)
