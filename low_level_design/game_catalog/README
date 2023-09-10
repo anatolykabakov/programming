@@ -1,0 +1,15 @@
+TicTacToe is a console game. The player can play the game using the program.
+
+functional:
+1. The board has a cell size of 3x3. Each cell must contain one state: empty, zero or cross.
+The board is initialized with empty cells. The player can change the state from empty to null or cross.
+2. The player can change the state of one cell. The player can write his move in the console.
+3. A bot is an algorithm that plays with the Player. The bot can change the state of one cell.
+4. Game is the main controller for the board, player and bot. The game can start, print the board, tell the player that he must move. determine the winner
+
+nonfunctional:
+1. C++
+2. gtest
+3. OOP
+4. doxygen
+5. cmake
