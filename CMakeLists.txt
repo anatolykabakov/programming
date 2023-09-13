@@ -8,12 +8,15 @@ if(BUILD_TESTS)
   add_subdirectory(thirdparty/googletest)
   add_subdirectory(thirdparty/benchmark)
 
+  set(BENCHMARK_ENABLE_INSTALL OFF)
+  set(BENCHMARK_ENABLE_TESTING OFF)
   add_subdirectory(cpp/gtest)
   add_subdirectory(cpp/gbenchmark)
 endif()
 
 add_subdirectory(dsa)
 add_subdirectory(low_level_design/snake_and_ladder)
+add_subdirectory(low_level_design/game_catalog)
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/dsa
