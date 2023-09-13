@@ -17,6 +17,7 @@ endif()
 
 add_subdirectory(dsa)
 add_subdirectory(low_level_design/snake_and_ladder)
+add_subdirectory(low_level_design/game_catalog)
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/dsa
