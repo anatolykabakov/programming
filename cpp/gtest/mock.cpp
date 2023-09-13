@@ -23,7 +23,7 @@ private:
 
 struct MockFoo : IFoo {
   ~MockFoo() = default;
-  MOCK_METHOD1(foo, void(int));
+  MOCK_METHOD(void, foo, (int), (override));
 };
 
 TEST(FooMock, FooTest)
