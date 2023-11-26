@@ -55,3 +55,5 @@ void TicTacToe::print_board_()
   }
   std::cout << std::endl;
 }
+
+REGISTER_PLUGIN(TicTacToe, TicTacToe::create);
