@@ -4,7 +4,6 @@ package sqllite
 import (
 	"fmt"
 	"database/sql"
-	"errors"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -13,20 +12,18 @@ type Storage struct {
 }
 
 func New(storagePath string) (*Storage, error) {
-	const op = "storage.sqlite.NewStorage" // Имя текущей функции для логов и ошибок
+	const op = "storage.sqlite.NewStorage"
 
-	db, err := sql.Open("sqlite3", storagePath) // Подключаемся к БД
+	db, err := sql.Open("sqlite3", storagePath)
 	if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Создаем таблицу, если ее еще нет
 	stmt, err := db.Prepare(`
-	CREATE TABLE IF NOT EXISTS url(
+	CREATE TABLE IF NOT EXISTS storage(
 			id INTEGER PRIMARY KEY,
-			alias TEXT NOT NULL UNIQUE,
-			url TEXT NOT NULL);
-	CREATE INDEX IF NOT EXISTS idx_alias ON url(alias);
+			key TEXT NOT NULL,
+			value TEXT NOT NULL);
 	`)
 	if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
@@ -40,52 +37,46 @@ func New(storagePath string) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) SaveURL(urlToSave string, alias string) (int64, error) {
-	const op = "storage.sqlite.SaveURL"
+func (s *Storage) Save(key string, value string) (int64, error) {
+	const op = "storage.sqlite.Save"
 
-	// Подготавливаем запрос
-	stmt, err := s.db.Prepare("INSERT INTO url(url,alias) values(?,?)")
+	stmt, err := s.db.Prepare("INSERT INTO storage(key, value) values(?, ?)")
 	if err != nil {
 			return 0, fmt.Errorf("%s: prepare statement: %w", op, err)
 	}
 
-	// Выполняем запрос
-	res, err := stmt.Exec(urlToSave, alias)
+	res, err := stmt.Exec(key, value)
 	if err != nil {
 			if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
 					return 0, fmt.Errorf("%s: %w", op, "storage.ErrURLExists")
 			}
-
 			return 0, fmt.Errorf("%s: execute statement: %w", op, err)
 	}
 
-	// Получаем ID созданной записи
 	id, err := res.LastInsertId()
 	if err != nil {
 			return 0, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
 	}
 
-	// Возвращаем ID
 	return id, nil
 }
 
-func (s *Storage) GetURL(alias string) (string, error) {
-	const op = "storage.sqlite.GetURL"
-
-	stmt, err := s.db.Prepare("SELECT url FROM url WHERE alias = ?")
+func (s *Storage) Get(depth int) ([]string, error) {
+	rows, err := s.db.Query("SELECT value FROM storage")
 	if err != nil {
-			return "", fmt.Errorf("%s: prepare statement: %w", op, err)
+		panic(err)
+	}
+	defer rows.Close()
+	var answer []string
+	for rows.Next() {
+		var value string
+		err := rows.Scan(&value)
+		if err != nil {
+			panic(err)
+		}
+		answer = append(answer, value)
+		fmt.Println(value)
 	}
 
-	var resURL string
-
-	err = stmt.QueryRow(alias).Scan(&resURL)
-	if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
-	}
-	if err != nil {
-			return "", fmt.Errorf("%s: execute statement: %w", op, err)
-	}
-
-	return resURL, nil
+	return answer, nil
 }
