@@ -1,12 +1,20 @@
 package calculator
 
 import (
-	"test/storage"
 	"fmt"
 )
 
+type StorageInterface interface {
+	Save(key string, value string) (int64, error)
+	Get(depth int) ([]string, error)
+}
+
 type CalculatorService struct {
-	Storage *sqllite.Storage
+	storage StorageInterface
+}
+
+func NewCalculatorService(s StorageInterface) *CalculatorService {
+	return &CalculatorService{storage: s}
 }
 
 func (c *CalculatorService) Calculate(a int, b int, operation string) int {
@@ -24,11 +32,11 @@ func (c *CalculatorService) Calculate(a int, b int, operation string) int {
 		value = a / b
 	}
 	res := fmt.Sprintf("%d %s %d = %d", a, operation, b, value)
-	c.Storage.Save("log", res)
+	c.storage.Save("log", res)
 	return value
 }
 
 func (c *CalculatorService) GetLastOperations(depth int) []string {
-	results, _ := c.Storage.Get(depth)
+	results, _ := c.storage.Get(depth)
 	return results
 }

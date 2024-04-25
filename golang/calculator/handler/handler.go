@@ -1,10 +1,8 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"encoding/json"
-  "test/service"
 )
 
 type Request struct {
@@ -25,8 +23,20 @@ type Responce struct {
 	Value int
 }
 
+type CalculatorInterface interface {
+	Calculate(a int, b int, operation string) int
+	GetLastOperations(depth int) []string
+}
+
 type CalculatorHanlder struct {
-	Calculator *calculator.CalculatorService
+	Calculator CalculatorInterface
+}
+
+func NewCalculatorHandler(calculator_service CalculatorInterface, address string) {
+	rest := &CalculatorHanlder{Calculator: calculator_service}
+	http.HandleFunc("/calculator", rest.HandleCalc)
+	http.HandleFunc("/history", rest.HandleHistory)
+	http.ListenAndServe(address, nil)
 }
 
 func (h *CalculatorHanlder) HandleCalc(rw http.ResponseWriter, req * http.Request) {
@@ -35,9 +45,8 @@ func (h *CalculatorHanlder) HandleCalc(rw http.ResponseWriter, req * http.Reques
 	if (err != nil) {
 		panic(err)
 	}
-	fmt.Println(t.A, t.B)
-
-	responce := h.Calculator.Calculate(t.A, t.B, t.Operation)
+  var responce Responce
+	responce.Value = h.Calculator.Calculate(t.A, t.B, t.Operation)
 
 	responce_m, _ := json.Marshal(responce)
 
@@ -52,7 +61,6 @@ func (h *CalculatorHanlder) HandleHistory(rw http.ResponseWriter, req * http.Req
 	if (err != nil) {
 		panic(err)
 	}
-	fmt.Println(t.Depth)
 
   result := h.Calculator.GetLastOperations(t.Depth)
 

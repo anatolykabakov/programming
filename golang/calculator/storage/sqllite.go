@@ -4,19 +4,18 @@ package sqllite
 import (
 	"fmt"
 	"database/sql"
-	"github.com/mattn/go-sqlite3"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Storage struct {
 	db *sql.DB
 }
 
-func New(storagePath string) (*Storage, error) {
-	const op = "storage.sqlite.NewStorage"
-
+func NewStorage(storagePath string) *Storage {
 	db, err := sql.Open("sqlite3", storagePath)
 	if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
+		panic(err)
 	}
 
 	stmt, err := db.Prepare(`
@@ -26,30 +25,28 @@ func New(storagePath string) (*Storage, error) {
 			value TEXT NOT NULL);
 	`)
 	if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
+		panic(err)
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
+		panic(err)
 	}
 
-	return &Storage{db: db}, nil
+	return &Storage{db: db}
 }
 
 func (s *Storage) Save(key string, value string) (int64, error) {
 	const op = "storage.sqlite.Save"
+	fmt.Println(key, value)
 
 	stmt, err := s.db.Prepare("INSERT INTO storage(key, value) values(?, ?)")
 	if err != nil {
 			return 0, fmt.Errorf("%s: prepare statement: %w", op, err)
 	}
 
-	res, err := stmt.Exec(key, value)
+	res, _ := stmt.Exec(key, value)
 	if err != nil {
-			if sqliteErr, ok := err.(sqlite3.Error); ok && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-					return 0, fmt.Errorf("%s: %w", op, "storage.ErrURLExists")
-			}
 			return 0, fmt.Errorf("%s: execute statement: %w", op, err)
 	}
 
