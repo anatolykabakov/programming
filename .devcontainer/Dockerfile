@@ -9,8 +9,6 @@ ARG USERNAME=devel
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-# ARG WORKSPACE=dev_container
-# WORKDIR /workspace/$WORKSPACE
 WORKDIR /workspace/
 
 ENV TERM xterm
@@ -22,7 +20,6 @@ RUN apt-get update \
     #
     # Install
     && apt-get -y install \
-    # Linux tools : Python is used to install conan
     git zip unzip python3-pip clang-format \
     build-essential gdb cmake cppcheck \
     valgrind kcachegrind \
@@ -48,5 +45,9 @@ RUN echo "export DISABLE_AUTO_TITLE=true" >> /root/.zshrc
 RUN echo 'LC_NUMERIC="en_US.UTF-8"' >> /root/.zshrc
 
 RUN pip3 install conan pre-commit cmakelang
+RUN git config --global --add safe.directory /workspace
 
 CMD ["zsh"]
+
+# RUN git submodule init
+# RUN git submodule update --recursive --remote

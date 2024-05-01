@@ -144,6 +144,13 @@ resource.
 
 For running code examples, i use the devcontainer vscode extension.
 
+# Build & test
+
+```
+cmake -DBUILD_TESTS=ON -B build && cmake --build build -j8
+ctest --output-or-failure --verbose
+```
+
 # TODO
 
 1. Complete the repository description

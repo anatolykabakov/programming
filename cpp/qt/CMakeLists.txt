@@ -13,8 +13,18 @@ if(CMAKE_VERSION VERSION_LESS "3.7.0")
   set(CMAKE_INCLUDE_CURRENT_DIR ON)
 endif()
 
-find_package(Qt5 COMPONENTS Widgets Core Gui REQUIRED)
+find_package(
+  Qt5
+  COMPONENTS
+    Widgets
+    Core
+    Gui
+    REQUIRED
+)
 
-add_executable(helloworld qt.cpp)
+add_executable(
+  helloworld
+  qt.cpp
+)
 
 target_link_libraries(helloworld Qt5::Widgets Qt5::Core Qt5::Gui)
