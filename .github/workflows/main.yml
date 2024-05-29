@@ -31,7 +31,7 @@ jobs:
           -DENABLE_SANITIZER_UNDEFINED_BEHAVIOR=OFF ..
           cmake --build . --target all -- -j8
           ctest --output-or-failure --verbose
-   cpp_static_analysis:
+  cpp_static_analysis:
     needs: [test]
     runs-on: ubuntu-20.04
     steps:
