@@ -4,57 +4,52 @@
 
 std::mutex m;
 
-enum class command_type {
-    open_new_doc
-};
+enum class command_type { open_new_doc };
 
 struct user_command {
-    command_type type;
+  command_type type;
 };
 
-void open_document_and_display_gui(const std::string &filename) {
-    std::lock_guard<std::mutex> lock(m);
-    std::cout << __func__ << " " << filename << std::endl;
+void open_document_and_display_gui(const std::string& filename)
+{
+  std::lock_guard<std::mutex> lock(m);
+  std::cout << __func__ << " " << filename << std::endl;
 }
 
-bool done_editing() {
+bool done_editing() { return false; }
 
-    return false;
+user_command get_user_input() { return user_command{command_type::open_new_doc}; }
+
+std::string get_file_name_from_user()
+{
+  std::string user_input;
+  std::lock_guard<std::mutex> lock(m);
+  std::cin >> user_input;
+  return user_input;
 }
 
-user_command get_user_input() {
-    return user_command{command_type::open_new_doc};
-}
+void process() {}
 
-std::string get_file_name_from_user() {
-    std::string user_input;
-    std::lock_guard<std::mutex> lock(m);
-    std::cin >> user_input;
-    return user_input;
-}
+void edit_document(const std::string& filename)
+{
+  open_document_and_display_gui(filename);
 
-void process() {
+  while (!done_editing()) {
+    user_command cmd = get_user_input();
 
-}
-
-void edit_document(const std::string &filename) {
-    open_document_and_display_gui(filename);
-
-    while (!done_editing()) {
-        user_command cmd = get_user_input();
-
-        if (cmd.type == command_type::open_new_doc) {
-            std::string new_name = get_file_name_from_user();
-            std::thread t(edit_document, new_name);
-            t.detach();
-        } else {
-            process();
-        }
+    if (cmd.type == command_type::open_new_doc) {
+      std::string new_name = get_file_name_from_user();
+      std::thread t(edit_document, new_name);
+      t.detach();
+    } else {
+      process();
     }
+  }
 }
 
-int main() {
-    std::thread t(edit_document, "doc1");
-    t.join();
-    return 0;
+int main()
+{
+  std::thread t(edit_document, "doc1");
+  t.join();
+  return 0;
 }
