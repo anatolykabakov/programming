@@ -12,7 +12,7 @@ func newEmployee(name string) *Employee {
 }
 
 func (i *Employee) info() {
-	fmt.Printf("Name %s, age %d", i.name, i.age)
+	fmt.Printf("Name %s, age %d \n", i.name, i.age)
 }
 
 func (i *Employee) setAge(age int) {
