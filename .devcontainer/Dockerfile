@@ -21,7 +21,7 @@ RUN apt-get update \
     && apt-get -y install \
     git zip unzip python3-pip clang-format \
     build-essential gdb cmake cppcheck \
-    valgrind kcachegrind golang \
+    valgrind kcachegrind golang kotlin \
     #
     # [Optional] Update UID/GID if needed
     && if [ "$USER_GID" != "1000" ] || [ "$USER_UID" != "1000" ]; then \
