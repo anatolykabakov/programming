@@ -1,4 +1,4 @@
-package helllo
+package hello
 
 fun main() {
   // const
