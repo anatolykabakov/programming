@@ -14,7 +14,7 @@ class Child : IFoo {
 }
 
 fun main() {
-	  //   val i = IFoo() # Interface 'interface IFoo : Any' does not have constructors
+	//   val i = IFoo() # Interface 'interface IFoo : Any' does not have constructors
     val c = Child()
     c.foo() // Child foo
     c.bar() // IFoo baz
