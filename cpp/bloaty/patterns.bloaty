@@ -1,0 +1,9 @@
+custom_data_source: {
+  name: "bloaty_package"
+  base_data_source: "compileunits"
+
+  rewrite: {
+    pattern: "(\\.\\./)?cpp/bloaty/example/src"
+    replacement: "Staros/src"
+  }
+}
