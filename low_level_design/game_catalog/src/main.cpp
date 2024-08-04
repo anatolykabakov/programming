@@ -3,7 +3,7 @@
 
 int main()
 {
-  PluginRegistry<IGame>::add("TicTacToe", TicTacToe::create);
+  // PluginRegistry<IGame>::add("TicTacToe", TicTacToe::create);
 
   std::string exit_cmd;
   while (exit_cmd != "y") {

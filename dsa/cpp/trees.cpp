@@ -3,7 +3,7 @@
 #include <vector>
 
 struct Node {
-  int value;
+  int value{};
   std::vector<Node> childs;
 };
 

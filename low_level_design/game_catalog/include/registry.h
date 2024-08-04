@@ -5,8 +5,8 @@
 // ref https://dxuuu.xyz/cpp-static-registration.html
 #include "IGame.h"
 
-// #define REGISTER_PLUGIN(plugin_name, create_func)                                                                      \
-//   bool plugin_name##_entry = PluginRegistry<IGame>::add(#plugin_name, (create_func))
+#define REGISTER_PLUGIN(plugin_name, create_func)                                                                      \
+  bool plugin_name##_entry = PluginRegistry<IGame>::add(#plugin_name, (create_func))
 
 template <typename T>
 class PluginRegistry {
