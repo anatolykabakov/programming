@@ -41,11 +41,19 @@ jobs:
         run: |
           git submodule init
           git submodule update
-          mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON \
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          cmake --build . --target all -- -j8
-          python3 cpp/static_analysis/run_clang_tidy.py -p build -checks="*,llvm-header-guard" -export-fixes build/fixes.yaml
+
+  file_size_profiler:
+    needs: [test]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: cpp_static_analysis
+        run: |
+          git submodule init
+          git submodule update
+          ./cpp/bloaty/run_bloaty.sh
+
   deploy:
     needs: [coverage]
     runs-on: ubuntu-20.04
