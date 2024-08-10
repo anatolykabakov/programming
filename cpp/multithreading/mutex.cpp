@@ -5,8 +5,7 @@
 #include <mutex>
 #include <thread>
 
-class WarehouseEmpty {
-};
+class WarehouseEmpty {};
 
 unsigned short c_SpecialItem = std::numeric_limits<unsigned short>::max();
 

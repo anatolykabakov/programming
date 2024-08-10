@@ -4,6 +4,6 @@ custom_data_source: {
 
   rewrite: {
     pattern: "(\\.\\./)?cpp/bloaty/example/src"
-    replacement: "Staros/src"
+    replacement: "/src"
   }
 }
