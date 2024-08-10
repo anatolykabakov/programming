@@ -9,7 +9,7 @@ cmake --build cpp/bloaty/example/build --target install/strip -j8 -- DESTDIR=ins
 
 # build bloaty
 git clone --recursive https://github.com/google/bloaty.git
-cmake -B bloaty/build -G Ninja -S . && cmake --build bloaty/build && cmake --build bloaty/build --target install
+cmake -B bloaty/build -S bloaty && cmake --build bloaty/build && cmake --build bloaty/build --target install
 
 # make file size profiler report
 ./bloaty/build/bloaty cpp/bloaty/example/build/install-dir-strip/main \
