@@ -1,5 +1,5 @@
 {
-  "name": "lidar-map-updater",
+  "name": "dev_container",
   "dockerComposeFile": ["docker-compose.yml"],
 
   "service": "dev_container",

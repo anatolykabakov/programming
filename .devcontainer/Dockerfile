@@ -1,4 +1,4 @@
-ARG VARIANT=ubuntu-20.04
+ARG VARIANT=ubuntu-22.04
 FROM mcr.microsoft.com/vscode/devcontainers/base:0-${VARIANT}
 
 # This Dockerfile's base image has a non-root user with sudo access. Use the "remoteUser"
@@ -17,12 +17,11 @@ ENV SHELL /bin/zsh
 # Configure apt and install packages
 RUN apt-get update \
     && export DEBIAN_FRONTEND=noninteractive \
-    #
     # Install
     && apt-get -y install \
     git zip unzip python3-pip clang-format \
     build-essential gdb cmake cppcheck \
-    valgrind kcachegrind \
+    valgrind kcachegrind golang kotlin \
     #
     # [Optional] Update UID/GID if needed
     && if [ "$USER_GID" != "1000" ] || [ "$USER_UID" != "1000" ]; then \
@@ -47,6 +46,8 @@ RUN echo 'LC_NUMERIC="en_US.UTF-8"' >> /root/.zshrc
 RUN pip3 install conan pre-commit cmakelang
 RUN git config --global --add safe.directory /workspace
 
+RUN curl -s https://packagecloud.io/install/repositories/golang-migrate/migrate/script.deb.sh | sudo bash
+RUN sudo apt-get install migrate
 CMD ["zsh"]
 
 # RUN git submodule init

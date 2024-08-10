@@ -11,11 +11,9 @@ struct A {
   bool a;
 };
 
-struct EmptyStruct {
-};
+struct EmptyStruct {};
 
-struct EmptyClass {
-};
+struct EmptyClass {};
 
 int main()
 {
