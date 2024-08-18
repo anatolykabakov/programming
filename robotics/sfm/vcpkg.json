@@ -1,0 +1,42 @@
+{
+  "name": "sfm",
+  "features": {
+    "gui": {
+      "description": "GUI graphics support via OpenCV",
+      "dependencies": [
+        {
+          "name": "opencv4",
+          "default-features": false,
+          "features": [
+            "gtk"
+          ]
+        }
+      ]
+    }
+  },
+  "dependencies": [
+    "yaml-cpp",
+    "libyaml",
+    "openmvg",
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "jpeg",
+        "png"
+      ]
+    },
+    "gtest",
+    "spdlog",
+    "nlohmann-json",
+    "boost-program-options",
+    "boost-format",
+    "boost-test",
+    "boost-system",
+    "boost-filesystem",
+    "boost-date-time",
+    "boost-iostreams",
+    "jsoncpp",
+    "tclap"
+  ]
+}
