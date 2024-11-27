@@ -7,6 +7,9 @@
 #include "openMVG/numeric/eigen_alias_definition.hpp"
 #include "openMVG/sfm/pipelines/sfm_robust_model_estimation.hpp"
 #include "openMVG/multiview/triangulation.hpp"
+#include <openMVG/sfm/sfm_data_filters.hpp>
+
+#include <opencv2/opencv.hpp>
 
 const auto white = cv::Scalar(255, 255, 255);
 const auto red = cv::Scalar(0, 0, 255);
@@ -68,8 +71,9 @@ Eigen::Isometry3d RelativePoseProviderOpenMVG::handle(const std::vector<cv::Poin
 
 openMVG::geometry::Pose3 toPose3(const Eigen::Isometry3d& pose)
 {
-  Eigen::Vector3d center = -pose.linear().inverse() * pose.translation();
-  openMVG::geometry::Pose3 poseVec3(pose.linear(), center);
+  // Eigen::Vector3d center = -pose.linear().inverse() * pose.translation();
+  // openMVG::geometry::Pose3 poseVec3(pose.linear(), center);
+  openMVG::geometry::Pose3 poseVec3(pose.linear(), pose.translation());
   return poseVec3;
 }
 
@@ -94,27 +98,47 @@ void progress_bar(int counter, int number, std::string prefix)
   std::cout.flush();
 }
 
-CameraIntrinsic getKittiCameraIntrinsic(const std::string& path_to_calibfile)
+Calibration getKittiCalibration(const std::string& path_to_calibfile)
 {
   std::ifstream file(path_to_calibfile);
   std::string line;
   std::vector<std::string> v;
   std::string each;
-  CameraIntrinsic intrinsic;
+
+  Calibration calib;
 
   if (file.is_open()) {
     while (std::getline(file, line)) {
-      std::stringstream stream(line);
+      std::stringstream in(line);
       std::vector<std::string> v;
-      while (std::getline(stream, each, ' ')) {
+      std::string label;
+      while (std::getline(in, each, ' ')) {
+        if (label.empty()) {
+          label = each;
+          continue;
+        }
         v.push_back(each);
       }
 
-      if (v[0] == "P0:") {
-        intrinsic.fx = std::stod(v[1]);
-        intrinsic.cx = std::stod(v[3]);
-        intrinsic.fy = std::stod(v[6]);
-        intrinsic.cy = std::stod(v[7]);
+      if (label.empty()) {
+        throw std::logic_error("Label not found!");
+      }
+
+      if (label == "P0:") {
+        calib.intrinsic.fx = std::stod(v[0]);
+        calib.intrinsic.fy = std::stod(v[5]);
+        calib.intrinsic.cx = std::stod(v[2]);
+        calib.intrinsic.cy = std::stod(v[6]);
+      }
+
+      if (label == "Tr:") {
+        const int rows = 3;
+        const int cols = 4;
+        for (int i = 0; i < rows; ++i) {
+          for (int j = 0; j < cols; ++j) {
+            calib.extrinsic(i, j) = std::stod(v[(i * cols) + j]);
+          }
+        }
       }
     }
 
@@ -122,7 +146,7 @@ CameraIntrinsic getKittiCameraIntrinsic(const std::string& path_to_calibfile)
   } else {
     std::cerr << "Unable to open kitti calib.txt file!" << std::endl;
   }
-  return intrinsic;
+  return calib;
 }
 
 // https://stackoverflow.com/questions/1263072/changing-a-matrix-from-right-handed-to-left-handed-coordinate-system
@@ -206,8 +230,8 @@ Eigen::Isometry3d opencv2isometry3d(const cv::Mat& T, const cv::Mat& R)
   return mat;
 }
 
-void getRidFailedFeatures(std::vector<cv::Point2f>& points1, std::vector<cv::Point2f>& points2,
-                          std::vector<uchar>& status)
+void TrackerOpenCV::getRidFailedFeatures(std::vector<cv::Point2f>& points1, std::vector<cv::Point2f>& points2,
+                                         std::vector<uchar>& status)
 {
   int indexCorrection = 0;
   for (int i = 0; i < status.size(); i++) {
@@ -219,83 +243,173 @@ void getRidFailedFeatures(std::vector<cv::Point2f>& points1, std::vector<cv::Poi
 
       points1.erase(points1.begin() + i - indexCorrection);
       points2.erase(points2.begin() + i - indexCorrection);
+      indexes_.erase(indexes_.begin() + i - indexCorrection);
+
       indexCorrection++;
     }
   }
 }
 
+void TrackerOpenCV::spatialFilter(const cv::Mat frame, const std::vector<cv::Point2f>& prev,
+                                  const std::vector<cv::Point2f>& curr, std::vector<uchar>& status)
+{
+  std::vector<double> norms;
+
+  for (int i = 0; i < status.size(); ++i) {
+    if (status[i]) {
+      const auto norm = std::sqrt(std::pow(curr[i].x - prev[i].x, 2) + std::pow(curr[i].y - prev[i].y, 2));
+      norms.push_back(norm);
+      const auto threshold = 40.0;
+      if (norm > threshold) {
+        status[i] = 0;
+      }
+    }
+  }
+
+  std::cout << std::endl;
+}
+
 Pipeline::Pipeline(const CameraIntrinsic& intrinsic)
 {
-  scene_.intrinsics[0] = std::make_shared<openMVG::cameras::Pinhole_Intrinsic>(intrinsic.width, intrinsic.height, intrinsic.fx,
-                                                                    intrinsic.cx, intrinsic.cy);
+  scene_.intrinsics[0] = std::make_shared<openMVG::cameras::Pinhole_Intrinsic>(
+      intrinsic.width, intrinsic.height, intrinsic.fx, intrinsic.cx, intrinsic.cy);
 }
 
-void Pipeline::update(const Eigen::Isometry3d& prevPose,
-            const Eigen::Isometry3d& currentPose,
-            const std::vector<cv::Point2f> prevFeatures,
-            const std::vector<cv::Point2f> currentFeatures,
-            int poseId)
+void Pipeline::filter()
 {
-  scene_.views[poseId].reset(new openMVG::sfm::View("", poseId, 0, poseId, scene_.intrinsics[0]->w(), scene_.intrinsics[0]->h()));
+  const size_t pointcount_initial = scene_.structure.size();
+  openMVG::sfm::RemoveOutliers_PixelResidualError(scene_, 4.0);
+  const size_t pointcount_pixelresidual_filter = scene_.structure.size();
+  openMVG::sfm::RemoveOutliers_AngleError(scene_, 2.0);
+  const size_t pointcount_angular_filter = scene_.structure.size();
+  std::cout << "Outlier removal (remaining #points):\n"
+            << "\t initial structure size #3DPoints: " << pointcount_initial << "\n"
+            << "\t\t pixel residual filter  #3DPoints: " << pointcount_pixelresidual_filter << "\n"
+            << "\t\t angular filter         #3DPoints: " << pointcount_angular_filter << std::endl;
+  // ;
+  // const openMVG::IndexT minPointPerPose = 12; // 6 min
+  // const openMVG::IndexT minTrackLength = 3;   // 2 min
+  // if (openMVG::sfm::eraseUnstablePosesAndObservations(scene_, minPointPerPose,
+  //                                                     minTrackLength)) {
+  //   // TODO: must ensure that track graph is producing a single connected
+  //   // component
+
+  //   const size_t pointcount_cleaning = scene_.structure.size();
+  //   std::cout << "Point_cloud cleaning:\n"
+  //             << "\t #3DPoints: " << pointcount_cleaning << "\n";
+  // } else {
+  //   std::cout << "JOPA PIZDEC" << std::endl;
+  // }
+}
+
+cv::Mat getP(const Eigen::Isometry3d& pose, CameraIntrinsic intrinsic)
+{
+  cv::Mat P(3, 4, CV_64F);
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      P.at<float>(i, j) = pose(i, j);
+    }
+  }
+  auto c = -pose.linear() * pose.translation();
+  P.at<float>(0, 3) = c.x();
+  P.at<float>(1, 3) = c.y();
+  P.at<float>(2, 3) = c.z();
+
+  cv::Mat K =
+      (cv::Mat_<float>(3, 3) << intrinsic.fx, 0.f, intrinsic.cx, 0.f, intrinsic.fy, intrinsic.cy, 0.f, 0.f, 1.f);
+  cv::Mat Kd;
+  K.convertTo(Kd, CV_64F);
+  return P;
+}
+
+void Pipeline::update(const Eigen::Isometry3d& prevPose, const Eigen::Isometry3d& currentPose,
+                      const std::vector<cv::Point2f> prevFeatures, const std::vector<cv::Point2f> currentFeatures,
+                      const std::vector<int> indexes, int poseId)
+{
+  scene_.views[poseId].reset(
+      new openMVG::sfm::View("", poseId, 0, poseId, scene_.intrinsics[0]->w(), scene_.intrinsics[0]->h()));
+  // scene_.poses[poseId] = openMVG::geometry::Pose3(currentPose.linear(), currentPose.translation());;
+
   scene_.poses[poseId] = toPose3(currentPose);
 
-  const auto points3d = triangulate(toPose3(prevPose), toPose3(currentPose), prevFeatures, currentFeatures, scene_.intrinsics[0]);
-
+  const auto points3d = triangulate(toPose3(prevPose), toPose3(currentPose), prevFeatures, currentFeatures, indexes,
+                                    scene_.intrinsics[0]);
+  std::cout << "features " << prevFeatures.size() << " points3d size " << points3d.size() << std::endl;
   for (const auto& [featureId, point3d] : points3d) {
     const auto currFeature = openMVG::Vec2(currentFeatures[featureId].x, currentFeatures[featureId].y).cast<double>();
-
-    openMVG::sfm::Landmark landmark;
-    landmark.obs[poseId] = openMVG::sfm::Observation(currFeature, featureId);
-    landmark.X = point3d;
-    scene_.structure.insert(std::make_pair(featureId, landmark));
+    if (scene_.structure.find(featureId) == scene_.structure.end()) {
+      openMVG::sfm::Landmark landmark;
+      landmark.obs[poseId] = openMVG::sfm::Observation(currFeature, featureId);
+      landmark.X = point3d;
+      scene_.structure.insert(std::make_pair(featureId, landmark));
+    } else {
+      scene_.structure[featureId].obs[poseId] = openMVG::sfm::Observation(currFeature, featureId);
+    }
   }
+
+  // filter();
 }
 
-Eigen::Isometry3d Pipeline::pose(int id) {
+Eigen::Isometry3d Pipeline::pose(int id)
+{
   Eigen::Isometry3d p = Eigen::Isometry3d::Identity();
-  p.translation() = scene_.poses[id].translation();
+  p.translation() = scene_.poses[id].center();
   p.linear() = scene_.poses[id].rotation();
   return p;
 }
 
-void Pipeline::save(fs::path sceneBeforePath) {
-  openMVG::sfm::Save(scene_, sceneBeforePath.string(), openMVG::sfm::ESfM_Data(openMVG::sfm::ALL));
+void Pipeline::adjust()
+{
+  openMVG::sfm::Bundle_Adjustment_Ceres ba;
+  ba.ceres_options().bVerbose_ = false;
+  ba.ceres_options().bCeres_summary_ = false;
+  ba.ceres_options().nb_threads_ = 4;
+  ba.ceres_options().max_num_iterations_ = 1000;
+  ba.Adjust(scene_, openMVG::sfm::Optimize_Options(openMVG::cameras::Intrinsic_Parameter_Type::ADJUST_ALL,
+                                                   openMVG::sfm::Extrinsic_Parameter_Type::ADJUST_ALL,
+                                                   openMVG::sfm::Structure_Parameter_Type::ADJUST_ALL));
 }
 
-std::unordered_map<int, openMVG::Vec3> Pipeline::triangulate(const openMVG::geometry::Pose3 &prevPoseVec3,
-                  const openMVG::geometry::Pose3 &currentPoseVec3,
-                  const std::vector<cv::Point2f> &prevFeatures,
-                  const std::vector<cv::Point2f> &currentFeatures,
-                  std::shared_ptr<openMVG::cameras::IntrinsicBase> intrinsics) {
+void Pipeline::save(fs::path sceneBeforePath)
+{
+  openMVG::sfm::Save(scene_, sceneBeforePath.string(),
+                     openMVG::sfm::ESfM_Data::ALL);  // openMVG::sfm::ESfM_Data::EXTRINSICS
+}
+
+std::unordered_map<int, openMVG::Vec3>
+Pipeline::triangulate(const openMVG::geometry::Pose3& prevPoseVec3, const openMVG::geometry::Pose3& currentPoseVec3,
+                      const std::vector<cv::Point2f>& prevFeatures, const std::vector<cv::Point2f>& currentFeatures,
+                      const std::vector<int> indexes, std::shared_ptr<openMVG::cameras::IntrinsicBase> intrinsics)
+{
   std::unordered_map<int, openMVG::Vec3> landmarks;
   for (int id = 0; id < prevFeatures.size(); ++id) {
     const auto prevFeature = openMVG::Vec2(prevFeatures[id].x, prevFeatures[id].y).cast<double>();
     const auto currFeature = openMVG::Vec2(currentFeatures[id].x, currentFeatures[id].y).cast<double>();
 
+    const auto bearingPrev = (*intrinsics)(prevFeature);
+    const auto bearingCurr = (*intrinsics)(currFeature);
     // Point triangulation
     openMVG::Vec3 point3d;
-    if (openMVG::Triangulate2View(prevPoseVec3.rotation(), prevPoseVec3.translation(),
-                                  (*intrinsics)(prevFeature), currentPoseVec3.rotation(),
-                                  currentPoseVec3.translation(), (*intrinsics)(currFeature),
-                                  point3d, openMVG::ETriangulationMethod::DEFAULT)) {
-      // Add a new landmark (3D point with it's 2d observations)
-      landmarks.insert({id, point3d});
+    bool success = openMVG::Triangulate2View(prevPoseVec3.rotation(), prevPoseVec3.translation(), bearingPrev,
+                                             currentPoseVec3.rotation(), currentPoseVec3.translation(), bearingCurr,
+                                             point3d, openMVG::ETriangulationMethod::DEFAULT);
+    if (success) {
+      landmarks.insert({indexes[id], point3d});
     }
   }
   return landmarks;
 }
 
-Debug::Debug() {
-    trajectoryImg_ = cv::Mat(1200, 1200, CV_8UC3, white);
+Debug::Debug(Eigen::Isometry3d extrinsic) : dds_(std::make_unique<CycloneDDS>(extrinsic)), extrinsic_(extrinsic)
+{
+  trajectoryImg_ = cv::Mat(1200, 1200, CV_8UC3, white);
 }
 
-void Debug::visualize(
-  int i,
-  double scale,
-  const Eigen::Isometry3d &relativePose,
-  const Eigen::Isometry3d &globalPose,
-  const Eigen::Isometry3d &sfmPose,
-  const Eigen::Isometry3d &gt, const Eigen::Isometry3d &gtPrev) {
+void Debug::visualize(int i, const cv::Mat& frame, const std::vector<cv::Point2f> prevFeatures,
+                      const std::vector<cv::Point2f> currentFeatures, double scale,
+                      const Eigen::Isometry3d& relativePose, const Eigen::Isometry3d& globalPose,
+                      const Eigen::Isometry3d& sfmPose, const Eigen::Isometry3d& gt, const Eigen::Isometry3d& gtPrev)
+{
   const auto posePoint = convertToImagePoint(globalPose, trajectoryImg_.size().height, offset, imgScale);
   const auto gtPoint = convertToImagePoint(gt, trajectoryImg_.size().height, offset, imgScale);
   const auto sfmPoint = convertToImagePoint(sfmPose, trajectoryImg_.size().height, offset, imgScale);
@@ -305,7 +419,8 @@ void Debug::visualize(
   cv::circle(trajectoryImg_, sfmPoint, 1, blue, 2);
 
   const auto gtRelative = gtPrev.inverse() * gt;
-  std::cout << "flame: " << i << std::endl;
+  std::cout << std::endl;
+  std::cout << "frame: " << i << std::endl;
   std::cout << "scale: " << scale << std::endl;
   std::cout << "rel norm: " << relativePose.translation().norm() << std::endl;
   // std::cout << "currFeatures size " << currFeatures.size() << std::endl;
@@ -321,75 +436,148 @@ void Debug::visualize(
   // cv::imshow("trajectoryImg", trajectoryImg);
   // cv::imshow("currentImg", frame);
   // cv::waitKey(0);
+  if (!video_) {
+    video_ = std::make_unique<cv::VideoWriter>("out.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 10, frame.size(),
+                                               true);
+  }
+  for (int i = 0; i < prevFeatures.size(); ++i) {
+    const auto prev = prevFeatures[i];
+    const auto curr = currentFeatures[i];
+    cv::circle(frame, prev, 2, red, -1);
+    cv::circle(frame, curr, 2, green, -1);
+    cv::line(frame, prev, curr, blue, 1);
+  }
+  video_->write(frame);
+  dds_->publish(frame);
 }
 
-void Debug::saveImg(fs::path trajectoryImgPath) {
-  cv::imwrite(trajectoryImgPath, trajectoryImg_);
-}
+void Debug::saveImg(fs::path trajectoryImgPath) { cv::imwrite(trajectoryImgPath, trajectoryImg_); }
 
-MonoVO::MonoVO(CameraIntrinsic intrinsic, std::unique_ptr<IRelativePoseProvider> relativeProvider, int featuresNumber)
-  : intrinsic_(std::move(intrinsic))
-  , relativeProvider_(std::move(relativeProvider))
-  , pp_(cv::Point2d(intrinsic.cx, intrinsic.cy))
-  , featuresNumber_(featuresNumber)
+void Debug::publish(const openMVG::sfm::SfM_Data& scene) { dds_->publish(scene); }
+
+void Debug::publish(const Eigen::Isometry3d& pose, const std::string& type) { dds_->publish(pose, type); }
+
+void Debug::publish(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) { dds_->publish(cloud); }
+
+TrackerOpenCV::TrackerOpenCV(CameraIntrinsic intrinsic, int featuresNumber)
+  : intrinsic_(std::move(intrinsic)), pp_(cv::Point2d(intrinsic.cx, intrinsic.cy)), featuresNumber_(featuresNumber)
 {
   detector_ = cv::GFTTDetector::create(featuresNumber, 0.01, 0.0);
 }
 
-Eigen::Isometry3d MonoVO::handle(const cv::Mat& frame)
+void TrackerOpenCV::detect()
 {
-  if (prevImg.empty()) {
-    prevImg = frame.clone();
-
-    detector_->detect(prevImg, keypoints);
-    cv::KeyPoint::convert(keypoints, prevFeatures_, std::vector<int>());
-    return Eigen::Isometry3d::Identity();
+  cv::Mat mask(prevImg.size(), CV_8UC1, cv::Scalar(255));
+  for (const auto& p : prevFeatures_) {
+    cv::circle(mask, p, 20, 0. - 1);
   }
-  cv::Mat currentImg = frame.clone();
-
-  cv::calcOpticalFlowPyrLK(prevImg, currentImg, prevFeatures_, currFeatures_, status, error, cv::Size(21, 21), 3);
-  getRidFailedFeatures(prevFeatures_, currFeatures_, status);
-
-  if (currFeatures_.size() < featuresNumber_ * 0.8) {
-    detector_->detect(prevImg, keypoints);
-    cv::KeyPoint::convert(keypoints, prevFeatures_, std::vector<int>());
-
-    cv::calcOpticalFlowPyrLK(prevImg, currentImg, prevFeatures_, currFeatures_, status, error, cv::Size(21, 21), 3);
-    getRidFailedFeatures(prevFeatures_, currFeatures_, status);
+  int count = featuresNumber_ - prevFeatures_.size();
+  if (count == 0) {
+    return;
   }
+  detector_ = cv::GFTTDetector::create(count, 0.01, 0.0);
 
-  const auto relative = relativeProvider_->handle(prevFeatures_, currFeatures_);
+  std::vector<cv::KeyPoint> keypoints;
+  detector_->detect(prevImg, keypoints, mask);
 
-  prevImg = currentImg.clone();
-  prevFeaturesSaved_ = prevFeatures_;
-  prevFeatures_ = currFeatures_;
-  return relative;
+  std::vector<cv::Point2f> newPoints;
+  cv::KeyPoint::convert(keypoints, newPoints, std::vector<int>());
+
+  for (const auto& p : newPoints) {
+    prevFeatures_.push_back(p);
+    ++index_;
+    indexes_.push_back(index_);
+  }
 }
 
-void SFM::run() {
+void TrackerOpenCV::track(const cv::Mat& frame)
+{
+  try {
+    if (prevImg.empty()) {
+      prevImg = frame.clone();
+    }
+    prevFeatures_ = currFeatures_;
+
+    if (currFeatures_.size() < featuresNumber_ * 0.8) {
+      detect();
+    }
+
+    cv::calcOpticalFlowPyrLK(prevImg, frame, prevFeatures_, currFeatures_, status, error, cv::Size(21, 21), 3);
+
+    spatialFilter(frame, prevFeatures_, currFeatures_, status);
+    getRidFailedFeatures(prevFeatures_, currFeatures_, status);
+
+    prevImg = frame.clone();
+  } catch (const std::runtime_error& ex) {
+    std::cout << ex.what() << std::endl;
+  }
+}
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr triangulateOpenCV(const Eigen::Isometry3d& prev, const Eigen::Isometry3d& curr,
+                                                      CameraIntrinsic intrinsic,
+                                                      const std::vector<cv::Point2f>& prevFeatures,
+                                                      const std::vector<cv::Point2f>& currentFeatures)
+{
+  cv::Mat P1 = getP(prev, intrinsic);
+  cv::Mat P2 = getP(curr, intrinsic);
+  auto N = prevFeatures.size();
+
+  cv::Mat point3d_homo(1, N, CV_64FC2);
+  cv::triangulatePoints(P1, P2, prevFeatures, currentFeatures, point3d_homo);
+
+  // std::cout << "f " << tracker_->prevFeatures().size() << " p " << point3d_homo.size() << std::endl;
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+  cloud->points.resize(point3d_homo.cols);
+
+  for (int i = 0; i < point3d_homo.cols; i++) {
+    pcl::PointXYZ& point = cloud->points[i];
+    cv::Mat p3d;
+    cv::Mat _p3h = point3d_homo.col(i);
+    cv::convertPointsFromHomogeneous(_p3h.t(), p3d);
+    point.x = p3d.at<double>(0);
+    point.y = p3d.at<double>(1);
+    point.z = p3d.at<double>(2);
+    std::cout << point.x << " " << point.y << " " << point.z << std::endl;
+  }
+  return cloud;
+}
+
+void SFM::run()
+{
   for (int i = config_.startFrame + 1; i < config_.endFrame; ++i) {
     const auto frame = cv::imread(config_.paths[i].string());
 
-    auto relativePose = monoVO_->handle(frame);
+    tracker_->track(frame);
+
+    auto relativePose = relativeProvider_->handle(tracker_->prevFeatures(), tracker_->currFeatures());
 
     double scale = getOdomScale(config_.gt[i].translation(), config_.gt[i - 1].translation());
     if (scale > config_.scaleThreshold && relativePose.translation().z() > relativePose.translation().x() &&
         relativePose.translation().z() > relativePose.translation().y()) {
       relativePose.translation() *= scale;
       odom_->update(relativePose);
+
+      const auto currentPose = odom_->pose();
+
+      auto cloud = triangulateOpenCV(config_.gt[i - 1], config_.gt[i], config_.calibration.intrinsic,
+                                     tracker_->prevFeatures(), tracker_->currFeatures());
+      // pipeline_->update(config_.gt[i - 1], config_.gt[i], tracker_->prevFeatures(), tracker_->currFeatures(),
+      // tracker_->indexes(),
+      //                   i);
+      // pipeline_->adjust();
+
+      if (config_.verbose) {
+        debug_->visualize(i, frame, tracker_->prevFeatures(), tracker_->currFeatures(), scale, relativePose,
+                          currentPose, pipeline_->pose(i), config_.gt[i], config_.gt[i - 1]);
+        // debug_->publish(pipeline_->scene());
+        debug_->publish(currentPose, "pose");
+        debug_->publish(config_.gt[i], "gt");
+        debug_->publish(cloud);
+        progress_bar(i, config_.endFrame);
+      }
+
+      prevOdom_ = currentPose;
     }
-
-    const auto currentPose = odom_->pose();
-
-    pipeline_->update(prevOdom_, currentPose, monoVO_->prevFeatures(), monoVO_->currFeatures(), i);
-    
-    if (config_.verbose) {
-      debug_->visualize(i, scale, relativePose, currentPose, pipeline_->pose(i), config_.gt[i], config_.gt[i - 1]);
-
-      progress_bar(i, config_.endFrame);
-    }
-
-    prevOdom_ = currentPose;
-
   }
 }

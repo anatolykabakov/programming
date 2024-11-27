@@ -37,6 +37,8 @@
     "boost-date-time",
     "boost-iostreams",
     "jsoncpp",
-    "tclap"
+    "tclap",
+    "atom-dds-data-structures",
+    "pcl"
   ]
 }
