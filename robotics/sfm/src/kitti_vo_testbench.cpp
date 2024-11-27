@@ -21,7 +21,7 @@ int main(int argc, char** argv)
 
   SFM::Config config;
 
-  config.FEATURES_NUMBER = 1000;
+  config.FEATURES_NUMBER = 2000;
   config.startFrame = startFrameArg.getValue();
   config.endFrame = endFrameArg.getValue();
   config.verbose = verboseModeArg.getValue();
@@ -38,9 +38,9 @@ int main(int argc, char** argv)
   const auto first = cv::imread(config.paths[config.startFrame].string());
 
   fs::path calibPath = sequencePath / fs::path("calib.txt");
-  auto intrinsic = getKittiCameraIntrinsic(calibPath.string());
-  intrinsic.width = first.size().width;
-  intrinsic.height = first.size().height;
+  config.calibration = getKittiCalibration(calibPath.string());
+  config.calibration.intrinsic.width = first.size().width;
+  config.calibration.intrinsic.height = first.size().height;
 
   fs::path gtPath = fs::path(datasetPath.getValue()) / fs::path("poses") / fs::path(sequenceNumber.getValue());
   gtPath.replace_extension(".txt");
@@ -48,21 +48,24 @@ int main(int argc, char** argv)
 
   auto odom = std::make_unique<Odometry>(config.gt[config.startFrame]);
 
-  auto debug = std::make_shared<Debug>();
+  auto debug = std::make_shared<Debug>(config.calibration.extrinsic);
 
-  std::unique_ptr<IRelativePoseProvider> relativeProvider = std::make_unique<RelativePoseProviderOpenCV>(intrinsic);
+  std::unique_ptr<IRelativePoseProvider> relativeProvider =
+      std::make_unique<RelativePoseProviderOpenCV>(config.calibration.intrinsic);
   // std::unique_ptr<IRelativePoseProvider> relativeProvider = std::make_unique<RelativePoseProviderOpenMVG>(intrinsic);
 
-  auto monoVO = std::make_unique<MonoVO>(intrinsic, std::move(relativeProvider), config.FEATURES_NUMBER);
+  auto monoVO = std::make_unique<TrackerOpenCV>(config.calibration.intrinsic, config.FEATURES_NUMBER);
 
-  auto pipeline = std::make_shared<Pipeline>(intrinsic);
+  auto pipeline = std::make_shared<Pipeline>(config.calibration.intrinsic);
 
-  auto sfm = std::make_unique<SFM>(config, std::move(monoVO), std::move(odom), debug, pipeline);
+  auto sfm =
+      std::make_unique<SFM>(config, std::move(relativeProvider), std::move(monoVO), std::move(odom), debug, pipeline);
   sfm->run();
 
   fs::path trajectoryImgPath = fs::path(resultDirArg.getValue()) / fs::path("trajectory.png");
   debug->saveImg(trajectoryImgPath);
 
   fs::path sceneBeforePath = fs::path(resultDirArg.getValue()) / fs::path("scene.ply");
+  // pipeline->adjust();
   pipeline->save(sceneBeforePath);
 }

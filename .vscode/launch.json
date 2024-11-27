@@ -5,11 +5,11 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "(gdb) Launch all_round_calibration_test",
+      "name": "(gdb) Launch kitti_vo_testbench",
       "type": "cppdbg",
       "request": "launch",
-      "program": "/atom/adas_dev_calibrations/build/debug/cpp/all_round_calibration/tests/all_round_calibration_test",
-      "args": [],
+      "program": "/atom/programming/robotics/sfm/build/kitti_vo_testbench",
+      "args": ["/data/tests_data/sfm/", "/atom/programming/robotics/sfm/out", "-s", "03", "-i", "0", "-e", "30", "-v"],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [],
