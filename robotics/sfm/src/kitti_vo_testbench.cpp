@@ -1,33 +1,48 @@
-#include "visual_odom_mono.h"
+#include "utils.h"
+#include "sfm.h"
+#include "tracker.h"
+// #include <tclap/CmdLine.h>
 
-#include <tclap/CmdLine.h>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/variables_map.hpp>
+#include <boost/program_options.hpp>
 
-int main(int argc, char** argv)
+
+namespace po = boost::program_options;
+namespace fs = std::filesystem;
+
+
+int main(int argc, char *argv[])
 {
-  TCLAP::CmdLine cmd("Command description message", ' ', "0.9");
-  TCLAP::UnlabeledValueArg<std::string> datasetPath("dataset", "", true, "", "dataset");
-  TCLAP::UnlabeledValueArg<std::string> resultDirArg("output", "Path to out dir", true, "00", "output");
-  TCLAP::ValueArg<std::string> sequenceNumber("s", "sequence", "sequence number", false, "00", "sequence");
-  TCLAP::ValueArg<int> startFrameArg("i", "start", "Name to print", false, 0, "start");
-  TCLAP::ValueArg<int> endFrameArg("e", "end", "Name to print", false, 0, "end");
-  TCLAP::SwitchArg verboseModeArg("v", "verbose", "Print debug info");
-  cmd.add(datasetPath);
-  cmd.add(sequenceNumber);
-  cmd.add(resultDirArg);
-  cmd.add(verboseModeArg);
-  cmd.add(startFrameArg);
-  cmd.add(endFrameArg);
-  cmd.parse(argc, argv);
+  po::options_description desc("Allowed options");
+  desc.add_options()("help", "produce help message")
+      ("in", po::value<std::string>(), "path to kitti dataset folder")("out", po::value<std::string>(), "path to results folder")
+      ("last_frame", po::value<int>()->default_value(200), "last frame of kitty processing") // NOLINT
+      ("first_frame", po::value<int>()->default_value(0), "first frame of kitty processing")
+      ("sequence,s", po::value<std::string>()->default_value("03"), "name of kitti scene 03 for example")
+      ("sfm,a", po::value<std::string>()->default_value("sfm"), "sfm algo [sfm|simple]")
+      ("config,c", po::value<std::string>()->default_value("../../../../cpp/sfm/config/sfm.yaml"), "path to config file")
+      ("verbose,v", po::bool_switch()->default_value(false), "verbose mode");
 
+  po::variables_map vm;
+  po::store(po::parse_command_line(argc, argv, desc), vm);
+  po::notify(vm);
+
+  if (vm.count("help")) {
+      std::cout << desc << "\n";
+      return 1;
+  }
   SFM::Config config;
 
   config.FEATURES_NUMBER = 2000;
-  config.startFrame = startFrameArg.getValue();
-  config.endFrame = endFrameArg.getValue();
-  config.verbose = verboseModeArg.getValue();
+  config.startFrame = vm["first_frame"].as<int>();//vm["in"].as<std::string>()
+  config.endFrame = vm["last_frame"].as<int>();
+  config.verbose = vm["verbose"].as<bool>();
 
-  fs::path sequencesPath = fs::path(datasetPath.getValue()) / fs::path("sequences");
-  fs::path sequencePath = sequencesPath / fs::path(sequenceNumber.getValue());
+  std::cout << "3" << std::endl;
+  fs::path sequencesPath = fs::path(vm["in"].as<std::string>()) / fs::path("sequences");
+  std::cout << "4" << std::endl;
+  fs::path sequencePath = sequencesPath / fs::path(vm["sequence"].as<std::string>());
 
   fs::path imagesPath = sequencePath / fs::path("image_0");
   for (const auto& path : fs::directory_iterator(imagesPath)) {
@@ -42,7 +57,7 @@ int main(int argc, char** argv)
   config.calibration.intrinsic.width = first.size().width;
   config.calibration.intrinsic.height = first.size().height;
 
-  fs::path gtPath = fs::path(datasetPath.getValue()) / fs::path("poses") / fs::path(sequenceNumber.getValue());
+  fs::path gtPath = fs::path(vm["in"].as<std::string>()) / fs::path("poses") / fs::path(vm["sequence"].as<std::string>());
   gtPath.replace_extension(".txt");
   config.gt = parseGTFile(gtPath.string());
 
@@ -56,16 +71,16 @@ int main(int argc, char** argv)
 
   auto monoVO = std::make_unique<TrackerOpenCV>(config.calibration.intrinsic, config.FEATURES_NUMBER);
 
-  auto pipeline = std::make_shared<Pipeline>(config.calibration.intrinsic);
+  auto pipeline = std::make_shared<Mapping>(config.calibration.intrinsic);
 
   auto sfm =
       std::make_unique<SFM>(config, std::move(relativeProvider), std::move(monoVO), std::move(odom), debug, pipeline);
   sfm->run();
 
-  fs::path trajectoryImgPath = fs::path(resultDirArg.getValue()) / fs::path("trajectory.png");
+  fs::path trajectoryImgPath = fs::path(vm["out"].as<std::string>()) / fs::path("trajectory.png");
   debug->saveImg(trajectoryImgPath);
 
-  fs::path sceneBeforePath = fs::path(resultDirArg.getValue()) / fs::path("scene.ply");
+  fs::path sceneBeforePath = fs::path(vm["out"].as<std::string>()) / fs::path("scene.ply");
   // pipeline->adjust();
   pipeline->save(sceneBeforePath);
 }

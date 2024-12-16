@@ -112,7 +112,7 @@ void CycloneDDS::publish(const openMVG::sfm::SfM_Data& scene)
   pcl::PointCloud<pcl::PointXYZ>::Ptr poses_cloud(new pcl::PointCloud<pcl::PointXYZ>);
   for (const auto& [id, pose] : scene.poses) {
     pcl::PointXYZ p;
-    const auto& position = pose.center();
+    const auto& position = pose.translation();
     p.x = position.x();
     p.y = position.y();
     p.z = position.z();

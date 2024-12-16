@@ -1,5 +1,5 @@
 {
-  "name": "sfm",
+  "name": "adas-dev-calibrations",
   "features": {
     "gui": {
       "description": "GUI graphics support via OpenCV",
@@ -12,9 +12,23 @@
           ]
         }
       ]
+    },
+    "suitesparse": {
+      "description": "Use suitesparse library",
+      "dependencies": [
+        "blas",
+        {
+          "name": "ceres",
+          "default-features": false,
+          "features": [
+            "suitesparse"
+          ]
+        }
+      ]
     }
   },
   "dependencies": [
+    "atom-dds-data-structures",
     "yaml-cpp",
     "libyaml",
     "openmvg",
@@ -26,6 +40,7 @@
         "png"
       ]
     },
+    "ceres",
     "gtest",
     "spdlog",
     "nlohmann-json",
@@ -37,8 +52,6 @@
     "boost-date-time",
     "boost-iostreams",
     "jsoncpp",
-    "tclap",
-    "atom-dds-data-structures",
     "pcl"
   ]
 }

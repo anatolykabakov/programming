@@ -13,7 +13,8 @@
 #include <Eigen/Geometry>
 #include <filesystem>
 
-#include "visual_odom_mono.h"
+#include "utils.h"
+#include "sfm.h"
 
 #include <tclap/CmdLine.h>
 #include <thread>
@@ -131,7 +132,6 @@ int main(int argc, char* argv[])
         inlier_match_points2.push_back(selected_points2[i]);
       }
     }
-
     if (true) {
       cv::Mat src;
       cv::hconcat(image1, image2, src);

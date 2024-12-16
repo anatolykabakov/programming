@@ -13,6 +13,8 @@ find_package(OpenMP REQUIRED)
 find_package(CycloneDDS-CXX CONFIG REQUIRED)
 find_package(dds_data_structures CONFIG REQUIRED)
 find_package(PCL CONFIG REQUIRED)
+find_package(Boost CONFIG REQUIRED program_options)
+
 
 add_library(dds_helper src/dds.cpp)
 
@@ -40,7 +42,15 @@ target_include_directories(
     ${PCL_INCLUDE_DIRS}
 )
 
-add_library(mono_vo src/visual_odom_mono.cpp)
+add_library(
+  mono_vo
+  src/utils.cpp
+  src/tracker.cpp
+  src/sfm.cpp
+  src/mapping.cpp
+  src/debug.cpp
+  src/odom.cpp
+)
 
 target_link_libraries(
   mono_vo
@@ -79,43 +89,64 @@ target_link_libraries(
     opencv_features2d
     opencv_calib3d
     opencv_imgcodecs
+    Boost::program_options
 )
 
-add_executable(
-  simple_triangulation
-  src/simple_triangulation.cpp
-)
+# add_executable(
+#   simple_triangulation
+#   src/simple_triangulation.cpp
+# )
 
-target_link_libraries(
-  simple_triangulation
-  PRIVATE
-    mono_vo
-    opencv_core
-    opencv_highgui
-    opencv_imgproc
-    opencv_features2d
-    opencv_calib3d
-    opencv_imgcodecs
-)
+# target_link_libraries(
+#   simple_triangulation
+#   PRIVATE
+#     mono_vo
+#     opencv_core
+#     opencv_highgui
+#     opencv_imgproc
+#     opencv_features2d
+#     opencv_calib3d
+#     opencv_imgcodecs
+# )
 
-add_executable(
-  ba_example
-  src/ba_example.cpp
-)
+# find_package(GTSAM REQUIRED)
 
-target_link_libraries(
-  ba_example
-  PRIVATE
-    OpenMVG::openMVG_image
-    OpenMVG::openMVG_features
-    OpenMVG::openMVG_matching
-    OpenMVG::openMVG_system
-    OpenMVG::openMVG_sfm
-    ${STLPLUS_LIBRARY}
-    Eigen3::Eigen
-)
+# add_executable(
+#   sfm_example
+#   src/sfm_example.cpp
+# )
 
-target_include_directories(
-  ba_example
-  PRIVATE "/opt/include"
-)
+# target_link_libraries(
+#   sfm_example
+#   PRIVATE
+#     mono_vo
+#     gtsam
+#     opencv_core
+#     opencv_highgui
+#     opencv_imgproc
+#     opencv_features2d
+#     opencv_calib3d
+#     opencv_imgcodecs
+# )
+
+# add_executable(
+#   ba_example
+#   src/ba_example.cpp
+# )
+
+# target_link_libraries(
+#   ba_example
+#   PRIVATE
+#     OpenMVG::openMVG_image
+#     OpenMVG::openMVG_features
+#     OpenMVG::openMVG_matching
+#     OpenMVG::openMVG_system
+#     OpenMVG::openMVG_sfm
+#     ${STLPLUS_LIBRARY}
+#     Eigen3::Eigen
+# )
+
+# target_include_directories(
+#   ba_example
+#   PRIVATE "/opt/include"
+# )

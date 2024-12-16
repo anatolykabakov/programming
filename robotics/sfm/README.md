@@ -1,4 +1,11 @@
 
+# build
+
+```
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=/atom/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --parallel 4
+```
+
 # refs
 
 https://habr.com/ru/articles/301522/
