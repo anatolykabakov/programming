@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package ai.flow.android;
+
+import "camera.proto";
+import "gps.proto";
+import "imu.proto";
+
+// Main message wrapper for ZMQ
+message ZMQMessage {
+    int64 timestamp = 1;
+    string topic = 2;
+    
+    oneof payload {
+        CameraImage camera_image = 3;
+        CameraState camera_state = 4;
+        GPSLocation gps_location = 5;
+        GPSData gps_data = 6;
+        IMUData imu_data = 7;
+        AccelerometerData accelerometer_data = 8;
+        GyroscopeData gyroscope_data = 9;
+        MagnetometerData magnetometer_data = 10;
+    }
+}
+
+// Message counter for statistics
+message MessageCounter {
+    int64 timestamp = 1;
+    string topic = 2;
+    int32 count = 3;
+    float rate = 4;  // messages per second
+}
+
+// Batch message counters
+message MessageCounters {
+    int64 timestamp = 1;
+    map<string, int32> counters = 2;
+    map<string, float> rates = 3;
+}
+
+
+
+
+

@@ -1,0 +1,8 @@
+
+{
+  "name": "adas-android",
+  "dependencies": [
+    "protobuf",
+    "cppzmq"
+  ]
+}

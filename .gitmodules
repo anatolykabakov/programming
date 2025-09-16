@@ -4,3 +4,6 @@
 [submodule "thirdparty/benchmark"]
 	path = thirdparty/benchmark
 	url = https://github.com/google/benchmark.git
+[submodule "android/adas/opendbc"]
+	path = android/adas/opendbc
+	url = https://github.com/infiniteCable2/opendbc.git
