@@ -69,8 +69,7 @@ dependencies {
     implementation files('libs/openpilot-0.1-arm64-v8a-debug.aar')
     
     // Cereal modules - using JAR files instead of projects
-    implementation files('libs/definitions.jar')
-    implementation files('libs/messaging-0.0.1.jar')
+    // implementation files('libs/definitions.jar')
     
     // Cap'n Proto
     implementation 'org.capnproto:runtime:0.1.13'
@@ -91,7 +90,7 @@ dependencies {
     
     // ZMQ for C++
     implementation 'org.zeromq:jeromq:0.6.0'
-    
+
     // Video processing (using Android MediaRecorder instead of JavaCV)
     
     // Native libraries are in src/main/jniLibs/arm64-v8a/

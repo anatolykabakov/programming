@@ -29,6 +29,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "adas"
 include ':app'
-
-// include ':openpilot'
-// project(':openpilot').projectDir = file('/home/anatoly/atom/flowpilot/flowy/.buildozer/android/platform/build-arm64-v8a/dists/openpilot')

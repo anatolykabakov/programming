@@ -15,6 +15,7 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import java.io.File;
 
@@ -28,32 +29,39 @@ import ai.flow.openpilot.ServiceRadard;
 
 public class MainActivity extends AppCompatActivity {
     public static final String LOG_TAG = "MainActivity";
-    private Button startButton = null;
-    private Button stopButton = null;
+    private Button startAdasButton = null;
+    private Button stopAdasButton = null;
+    private Button startLoggingButton = null;
+    private Button stopLoggingButton = null;
+    private Button startJoystickButton = null;
+    private Button stopJoystickButton = null;
     private Button selectDirectoryButton = null;
+    private Button btnSteerLeft = null;
+    private Button btnSteerRight = null;
+    private Button btnAccel = null;
+    private Button btnBrake = null;
+    private Button btnAccEnable = null;
     private TextureView mImageView = null;
     private TextView logDirectoryPath = null;
+    private TextView curvatureDisplay = null;
 
     CameraHandler cameraHandler = null;
-    PandaHandler pandaHandler = null;
+//    PandaHandler pandaHandler = null;
     GPSHandler gpsHandler = null;
     IMUHandler imuHandler = null;
-    ZMQLogger zmqLogger = null;
     
+    // Camera state tracking
+    private boolean cameraStarted = false;
+
     // SharedPreferences for storing log directory
     private SharedPreferences preferences;
     private static final String PREFS_NAME = "adas_prefs";
-    private static final String LOG_DIRECTORY_KEY = "log_directory";
-    private static final String DEFAULT_LOG_DIRECTORY = "/sdcard/adas_logs";
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        
-        // Initialize ZMQ configuration
-//        ZMQConfig.init(this);
 
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
                 ||
@@ -63,7 +71,7 @@ public class MainActivity extends AppCompatActivity {
                 ||
                 (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED)
                 ||
-                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                  ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.HIGH_SAMPLING_RATE_SENSORS) != PackageManager.PERMISSION_GRANTED)
         )
         {
@@ -73,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             };
-            
+
             // Add HIGH_SAMPLING_RATE_SENSORS permission for Android 12+ (API 31+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 String[] permissionsWithSensors = new String[permissions.length + 1];
@@ -81,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
                 permissionsWithSensors[permissions.length] = Manifest.permission.HIGH_SAMPLING_RATE_SENSORS;
                 permissions = permissionsWithSensors;
             }
-            
+
             requestPermissions(permissions, 1);
         }
         if (Build.VERSION.SDK_INT >= 30){
@@ -91,148 +99,65 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(getpermission);
             }
         }
-
-        stopButton =  findViewById(R.id.stopButton);
-        startButton =  findViewById(R.id.startButton);
-        selectDirectoryButton = findViewById(R.id.select_directory_button);
+        startLoggingButton = findViewById(R.id.startLoggingButton);
+        stopLoggingButton = findViewById(R.id.stopLoggingButton);
         mImageView = findViewById(R.id.textureView);
-        logDirectoryPath = findViewById(R.id.log_directory_path);
-        
-        // Initialize SharedPreferences
-        preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        
-        // Load saved log directory
-        String savedLogDirectory = preferences.getString(LOG_DIRECTORY_KEY, DEFAULT_LOG_DIRECTORY);
-        logDirectoryPath.setText(savedLogDirectory);
 
+        preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         cameraHandler = new CameraHandler(getApplication().getApplicationContext(), mImageView);
         gpsHandler = new GPSHandler(this);
         imuHandler = new IMUHandler(this);
-//        zmqLogger = ZMQLogger.getInstance();
-        
-        // Set log directory for ZMQLogger
-//        zmqLogger.setLogDirectory(savedLogDirectory);
+        Intent intent = new Intent(getApplicationContext(), AdasAppHandler.class);
+        startService(intent);
+        gpsHandler.start();
+        imuHandler.start();
 
-        selectDirectoryButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showDirectorySelectionDialog();
-            }
-        });
-
-        startButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
+        startLoggingButton.setOnClickListener(v -> {
+            Log.i(LOG_TAG, "Starting logging...");
+            
+            // Start camera only once
+            if (!cameraStarted) {
                 cameraHandler.start();
-                gpsHandler.start();
-                imuHandler.start();
-                AdasAppHandler.startStatic();
-//                zmqLogger.start();
-//                Intent intent = new Intent(getApplicationContext(), PandaHandler.class);
-//                startService(intent);
+                cameraStarted = true;
+                Log.i(LOG_TAG, "Camera started for the first time");
+            } else {
+                Log.i(LOG_TAG, "Camera already started, skipping camera start");
+            }
 
-                // ServiceDebugd.prepare(getApplication().getApplicationContext());
-                // ServiceDebugd.start(getApplication().getApplicationContext(), "");
-                // ServiceControlsd.prepare(getApplication().getApplicationContext());
-                // ServiceControlsd.start(getApplication().getApplicationContext(), "");
-                // ServiceRadard.prepare(getApplication().getApplicationContext());
-                // ServiceRadard.start(getApplication().getApplicationContext(), "");
-            }
+            File externalDir = Environment.getExternalStorageDirectory();
+            File logsDir = new File(externalDir, "adas_logs");
+            Logger.getInstance().start(logsDir.getAbsolutePath());
+
+            Log.i(LOG_TAG, "Logger started, isRunning: " + Logger.getInstance().isRunning());
+            Log.i(LOG_TAG, "IMU Handler running: " + imuHandler.isRunning());
+            Log.i(LOG_TAG, "GPS Handler running: " + gpsHandler.isRunning());
+
+            startLoggingButton.setEnabled(false);
+            stopLoggingButton.setEnabled(true);
+            Toast.makeText(MainActivity.this, "📹 Logging Started", Toast.LENGTH_SHORT).show();
         });
 
-        stopButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                cameraHandler.stop();
-                gpsHandler.stop();
-                imuHandler.stop();
-                AdasAppHandler.stopStatic();
-//                zmqLogger.stop();
-                stopService(new Intent(getApplicationContext(), PandaHandler.class));
-            }
+        stopLoggingButton.setOnClickListener(v -> {
+            Logger.getInstance().stop();
+
+            startLoggingButton.setEnabled(true);
+            stopLoggingButton.setEnabled(false);
+            Toast.makeText(MainActivity.this, "⏹ Logging Stopped", Toast.LENGTH_SHORT).show();
         });
+
     }
-    
-    private void showDirectorySelectionDialog() {
-        // Create a simple dialog with common directory options
-        String[] directories = {
-            "/sdcard/adas_logs",
-            "/sdcard/Download/adas_logs", 
-            "/sdcard/Documents/adas_logs",
-            "/sdcard/Android/data/ai.flow.android/files/logs",
-            "/storage/emulated/0/adas_logs"
-        };
-        
-        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
-        builder.setTitle("Select Log Directory");
-        builder.setItems(directories, (dialog, which) -> {
-            String selectedDirectory = directories[which];
-            setLogDirectory(selectedDirectory);
-        });
-        
-        // Add custom option
-        builder.setNeutralButton("Custom Path", (dialog, which) -> {
-            showCustomPathDialog();
-        });
-        
-        builder.setNegativeButton("Cancel", null);
-        builder.show();
-    }
-    
-    private void showCustomPathDialog() {
-        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
-        builder.setTitle("Enter Custom Path");
-        
-        final android.widget.EditText input = new android.widget.EditText(this);
-        input.setText(logDirectoryPath.getText().toString());
-        input.setHint("/sdcard/adas_logs");
-        builder.setView(input);
-        
-        builder.setPositiveButton("OK", (dialog, which) -> {
-            String customPath = input.getText().toString().trim();
-            if (!customPath.isEmpty()) {
-                setLogDirectory(customPath);
-            }
-        });
-        
-        builder.setNegativeButton("Cancel", null);
-        builder.show();
-    }
-    
-    private void setLogDirectory(String directory) {
-        // Validate directory path
-        if (isValidDirectory(directory)) {
-            // Save to preferences
-            preferences.edit().putString(LOG_DIRECTORY_KEY, directory).apply();
-            
-            // Update UI
-            logDirectoryPath.setText(directory);
-            
-            // Update ZMQLogger
-            zmqLogger.setLogDirectory(directory);
-            
-            Toast.makeText(this, "Log directory set to: " + directory, Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, "Invalid directory path. Please check permissions.", Toast.LENGTH_LONG).show();
-        }
-    }
-    
-    private boolean isValidDirectory(String path) {
-        try {
-            File dir = new File(path);
-            if (!dir.exists()) {
-                // Try to create the directory
-                return dir.mkdirs();
-            }
-            return dir.isDirectory() && dir.canWrite();
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (cameraHandler != null) cameraHandler.stop();
+        if (gpsHandler != null) gpsHandler.stop();
+        if (imuHandler != null) imuHandler.stop();
+        stopService(new Intent(getApplicationContext(), AdasAppHandler.class));
+        
+        // Reset camera state
+        cameraStarted = false;
+        
+        android.util.Log.i("MainActivity", "All services stopped in onDestroy");
     }
 
 }

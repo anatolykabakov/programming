@@ -1,49 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AndroidLayouts">
+    <shared>
+      <config />
+    </shared>
+    <layouts>
+      <layout url="file://$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml">
+        <config>
+          <theme>@style/Theme.Adas</theme>
+        </config>
+      </layout>
+    </layouts>
+  </component>
   <component name="AutoImportSettings">
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2dddc1c0-d83e-4ae1-9c50-f84d0fd8ba6a" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libJOCL_2_0_4-android-arm64.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libJOCL_2_0_4-android-arm64.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libgdx-freetype.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libgdx-freetype.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libgdx.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libgdx.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libjson11.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libjson11.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/liblmdb.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/liblmdb.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libmessaging.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libmessaging.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libmodelparser.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libmodelparser.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libopencv_java490.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libopencv_java490.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libpandad.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libpandad.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libpandaflash.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libpandaflash.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libprotobuf-lite.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libprotobuf-lite.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libprotobuf.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libprotobuf.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libprotoc.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libprotoc.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libthneedrunner.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libthneedrunner.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libusb-1.0.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libusb-1.0.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libzmq.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libzmq.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/arm64-v8a/libzmq_reader.so" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/arm64-v8a/libzmq_reader.so" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/definitions.jar" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/definitions.jar" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/messaging-0.0.1.jar" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/messaging-0.0.1.jar" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/libs/openpilot-0.1-arm64-v8a-debug.aar" beforeDir="false" afterPath="$PROJECT_DIR$/app/libs/openpilot-0.1-arm64-v8a-debug.aar" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/adas_app.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/adas_app.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/adas_app.h" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/adas_app.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/adas_app_android.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/adas_app_android.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/adas_app_linux.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/adas_app_linux.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/build_cpp.sh" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/build_cpp.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/logger.h" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/logger.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/protobuf_utils.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/protobuf_utils.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/protobuf_utils.h" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/protobuf_utils.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/tests/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/tests/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/tests/test_zmq_imu.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/tests/test_zmq_imu.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/IMUHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/IMUHandler.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/ProtobufUtils.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/ProtobufUtils.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/messaging/PortMap.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/messaging/PortMap.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/proto/imu.proto" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/proto/imu.proto" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/proto/messages.proto" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/proto/messages.proto" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/cpp/services/panda_service.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/cpp/services/panda_service.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/AdasAppHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/AdasAppHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/MainActivity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/ai/flow/android/MainActivity.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/xml/device_filter.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/xml/device_filter.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/generate_proto_python.sh" beforeDir="false" afterPath="$PROJECT_DIR$/generate_proto_python.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/local.properties" beforeDir="false" afterPath="$PROJECT_DIR$/local.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opendbc" beforeDir="false" afterPath="$PROJECT_DIR$/opendbc" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opendbc/examples/joystick.py" beforeDir="false" afterPath="$PROJECT_DIR$/opendbc/examples/joystick.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opendbc/opendbc/car/car_helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/opendbc/opendbc/car/car_helpers.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opendbc/opendbc/car/interfaces.py" beforeDir="false" afterPath="$PROJECT_DIR$/opendbc/opendbc/car/interfaces.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opendbc/opendbc/car/panda_runner.py" beforeDir="false" afterPath="$PROJECT_DIR$/opendbc/opendbc/car/panda_runner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/opendbc/opendbc/car/volkswagen/carcontroller.py" beforeDir="false" afterPath="$PROJECT_DIR$/opendbc/opendbc/car/volkswagen/carcontroller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/panda" beforeDir="false" afterPath="$PROJECT_DIR$/panda" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/panda/SConscript" beforeDir="false" afterPath="$PROJECT_DIR$/panda/SConscript" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/panda/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/panda/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/panda/test.sh" beforeDir="false" afterPath="$PROJECT_DIR$/panda/test.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -53,7 +45,7 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[DeviceId(pluginId=PhysicalDevice, isTemplate=false, identifier=serial=1ab94364)]" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[DeviceId(pluginId=Default, isTemplate=false, identifier=serial=10.41.155.184:5555;connection=fd78a9ba)]" />
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
       <ProjectState />
@@ -63,7 +55,11 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/../.." />
   </component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/app/build.gradle" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/local.properties" root0="FORCE_HIGHLIGHTING" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
@@ -85,6 +81,7 @@
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;cpp__enhancement&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/anatoly/atom/programming/android/adas&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;project.propVCSSupport.DirectoryMappings&quot;
   }
 }</component>
@@ -171,5 +168,21 @@
       <updated>1758309515618</updated>
     </task>
     <servers />
+  </component>
+  <component name="play_dynamic_filters_status">
+    <option name="appIdToCheckInfo">
+      <map>
+        <entry key="ai.flow.android">
+          <value>
+            <CheckInfo lastCheckTimestamp="1760983038113" />
+          </value>
+        </entry>
+        <entry key="ai.flow.android.test">
+          <value>
+            <CheckInfo lastCheckTimestamp="1760983038113" />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
 </project>

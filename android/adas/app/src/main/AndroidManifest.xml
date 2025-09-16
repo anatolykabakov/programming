@@ -45,7 +45,8 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/device_filter" />
         </activity>
-        <service android:name="ai.flow.android.PandaHandler"></service>
+        <service android:name="ai.flow.android.AdasAppHandler"></service>
+        <service android:name="ai.flow.android.ZMQBridgeService"></service>
     </application>
 
 </manifest>

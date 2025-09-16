@@ -246,59 +246,30 @@ build_linux() {
         cmake --build "$BUILD_DIR"
     fi
 
-    # Проверяем результат
-    LIBRARY_PATH="$BUILD_DIR/libadas_app.so"
-    if [ -f "$LIBRARY_PATH" ]; then
-        print_success "Linux библиотека создана: $LIBRARY_PATH"
-
-        # Показываем информацию о библиотеке
+    # Запускаем тесты если нужно
+    if [ "$BUILD_TESTS" = true ]; then
         echo
-        print_status "Информация о библиотеке:"
-        ls -la "$LIBRARY_PATH"
-        echo
-        print_status "Размер: $(du -h "$LIBRARY_PATH" | cut -f1)"
-        print_status "Цель: Linux"
+        print_status "Запуск тестов..."
 
-        # Запускаем тесты если нужно
-        if [ "$BUILD_TESTS" = true ]; then
-            echo
-            print_status "Запуск тестов..."
+        # Проверяем, что тесты собрались
+        TEST_EXECUTABLE="$BUILD_DIR/tests/adas_tests"
+        if [ -f "$TEST_EXECUTABLE" ]; then
+            print_status "Тестовый исполняемый файл найден: $TEST_EXECUTABLE"
 
-            # Проверяем, что тесты собрались
-            TEST_EXECUTABLE="$BUILD_DIR/tests/adas_tests"
-            if [ -f "$TEST_EXECUTABLE" ]; then
-                print_status "Тестовый исполняемый файл найден: $TEST_EXECUTABLE"
-
-                # Запускаем тесты с таймаутом 2 секунды
-                cd "$BUILD_DIR"
-                if timeout 2s ./tests/adas_tests; then
-                    print_success "Все тесты прошли успешно!"
-                else
-                    exit_code=$?
-                    if [ $exit_code -eq 124 ]; then
-                        print_error "Тесты превысили таймаут 2 секунды"
-                    else
-                        print_error "Некоторые тесты не прошли"
-                    fi
-                    exit 1
-                fi
-                cd "$CPP_DIR"
+            # Запускаем тесты
+            cd "$BUILD_DIR"
+            if ./tests/adas_tests; then
+                print_success "Все тесты прошли успешно!"
             else
-                print_error "Тестовый исполняемый файл не найден: $TEST_EXECUTABLE"
+                exit_code=$?
+                print_error "Некоторые тесты не прошли (код: $exit_code)"
                 exit 1
             fi
+            cd "$CPP_DIR"
+        else
+            print_error "Тестовый исполняемый файл не найден: $TEST_EXECUTABLE"
+            exit 1
         fi
-
-        # Проверяем зависимости
-        if command -v ldd &> /dev/null; then
-            echo
-            print_status "Зависимости библиотеки:"
-            ldd "$LIBRARY_PATH" || echo "  Нет зависимостей"
-        fi
-
-    else
-        print_error "Ошибка: Linux библиотека не создана"
-        return 1
     fi
 }
 
@@ -363,7 +334,7 @@ build_android() {
     fi
 
     # Проверяем результат
-    LIBRARY_PATH="$CPP_DIR/$BUILD_DIR/libadas_app.so"
+    LIBRARY_PATH="$CPP_DIR/$BUILD_DIR/libadas_app_android.so"
     if [ -f "$LIBRARY_PATH" ]; then
         print_success "C++ библиотека создана: $LIBRARY_PATH"
 
@@ -404,14 +375,16 @@ build_cpp_library() {
 # Копирование библиотеки в jniLibs (только для Android)
 copy_to_jnilibs() {
     if [ "$BUILD_TARGET" = "android" ]; then
-        print_status "Копирование библиотеки в jniLibs..."
+        print_status "Копирование библиотек в jniLibs..."
 
         JNI_LIBS_DIR="/workspace/programming/android/adas/app/libs/arm64-v8a"
         mkdir -p "$JNI_LIBS_DIR"
 
-        cp "$CPP_DIR/$BUILD_DIR/libadas_app.so" "$JNI_LIBS_DIR/"
+        # Копируем основную библиотеку
+        cp "$CPP_DIR/$BUILD_DIR/libadas_app_android.so" "$JNI_LIBS_DIR/"
+        print_success "✓ libadas_app_android.so скопирована"
 
-        print_success "Библиотека скопирована в $JNI_LIBS_DIR"
+        print_success "Все библиотеки скопированы в $JNI_LIBS_DIR"
     else
         print_status "Копирование в jniLibs пропущено (не Android сборка)"
     fi

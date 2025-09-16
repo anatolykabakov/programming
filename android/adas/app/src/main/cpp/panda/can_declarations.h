@@ -6,10 +6,10 @@
 #define CANPACKET_HEAD_SIZE 6U
 
 #if !defined(STM32F4)
-  #define CANFD
-  #define CANPACKET_DATA_SIZE_MAX 64U
+#define CANFD
+#define CANPACKET_DATA_SIZE_MAX 64U
 #else
-  #define CANPACKET_DATA_SIZE_MAX 8U
+#define CANPACKET_DATA_SIZE_MAX 8U
 #endif
 
 typedef struct {

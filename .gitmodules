@@ -7,3 +7,6 @@
 [submodule "android/adas/opendbc"]
 	path = android/adas/opendbc
 	url = https://github.com/infiniteCable2/opendbc.git
+[submodule "android/adas/panda"]
+	path = android/adas/panda
+	url = https://github.com/infiniteCable2/panda.git

@@ -30,27 +30,5 @@ message CameraImage {
     CameraType camera_type = 11;
 }
 
-// Camera state message
-message CameraState {
-    int64 timestamp = 1;
-    int32 frame_id = 2;
-    
-    // Camera status
-    bool is_recording = 3;
-    bool is_connected = 4;
-    
-    // Camera settings
-    int32 exposure_time = 5;
-    int32 iso = 6;
-    float white_balance = 7;
-    
-    // Image dimensions
-    int32 width = 8;
-    int32 height = 9;
-    string format = 10;
-}
-
-
-
 
 

@@ -6,37 +6,30 @@
 #include <atomic>
 #include <thread>
 #include <memory>
-#include <zmq.hpp>
-#include "messages.pb.h"
+#include "framework/service_manager.hpp"
+#include "services/panda_service.h"
+#include "services/sensor_reader_service.h"
+#include "services/zmq_bridge_service.h"
 
 class AdasApp {
 public:
-    AdasApp();
-    ~AdasApp();
+  AdasApp();
+  AdasApp(int usb_fd);
+  ~AdasApp();
 
-    bool start();
-    void stop();
+  bool start();
+  void stop();
+
+  std::shared_ptr<microros::ServiceManager> getServiceManager() { return service_manager_; }
 
 private:
-    void readerThread();
-    void setupZMQ();
-    
-    // Helper methods for message processing
-    void processPollResults(const std::vector<zmq::pollitem_t>& poll_items, 
-                           const std::vector<std::string>& topic_names);
-    void processMessage(const std::string& topic_name, zmq::socket_t* socket);
-    void logSensorData(const ai::flow::android::ZMQMessage& message);
-    void forwardMessage(const std::string& topic_name, const ai::flow::android::ZMQMessage& message);
+  void setupServices();
 
-    std::atomic<bool> running_;
-    std::thread reader_thread_;
-    long long start_time_;
+  std::atomic<bool> running_;
+  int usb_fd_ = -1;
 
-    // Direct ZMQ sockets based on working test code
-    std::unique_ptr<zmq::context_t> zmq_context_;
-    std::map<std::string, std::string> zmq_topics_;
-    std::unique_ptr<zmq::socket_t> imu_publisher_;
-    
-    // Map topic names to subscriber sockets for easy iteration
-    std::map<std::string, std::unique_ptr<zmq::socket_t>> topic_subscribers_;
+  std::shared_ptr<microros::ServiceManager> service_manager_;
+  std::shared_ptr<PandaService> panda_service_;
+  std::shared_ptr<SensorReaderService> sensor_service_;
+  std::shared_ptr<ZmqBridgeService> zmq_bridge_service_;
 };
