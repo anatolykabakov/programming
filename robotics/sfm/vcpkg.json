@@ -1,0 +1,57 @@
+{
+  "name": "adas-dev-calibrations",
+  "features": {
+    "gui": {
+      "description": "GUI graphics support via OpenCV",
+      "dependencies": [
+        {
+          "name": "opencv4",
+          "default-features": false,
+          "features": [
+            "gtk"
+          ]
+        }
+      ]
+    },
+    "suitesparse": {
+      "description": "Use suitesparse library",
+      "dependencies": [
+        "blas",
+        {
+          "name": "ceres",
+          "default-features": false,
+          "features": [
+            "suitesparse"
+          ]
+        }
+      ]
+    }
+  },
+  "dependencies": [
+    "atom-dds-data-structures",
+    "yaml-cpp",
+    "libyaml",
+    "openmvg",
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": [
+        "jpeg",
+        "png"
+      ]
+    },
+    "ceres",
+    "gtest",
+    "spdlog",
+    "nlohmann-json",
+    "boost-program-options",
+    "boost-format",
+    "boost-test",
+    "boost-system",
+    "boost-filesystem",
+    "boost-date-time",
+    "boost-iostreams",
+    "jsoncpp",
+    "pcl"
+  ]
+}

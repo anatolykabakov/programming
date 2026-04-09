@@ -4,12 +4,40 @@
   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
+
+
+    
+  
+  
+
     {
-      "name": "(gdb) Launch tictactoe_exec",
+      "name": "Python: intrinsics_calibration",
+      "type": "python",
+      "request": "launch",
+      "program": "/workspace/programming/robotics/calibration/intrinsics_calibration.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": ["/workspace/programming/robotics/calibration/chessboard"],
+      "purpose": ["debug-in-terminal"]
+    },
+    
+    {
+      "name": "Python: extrinsic_calibration.py",
+      "type": "python",
+      "request": "launch",
+      "program": "/workspace/programming/robotics/calibration/extrinsic_calibration.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": ["/workspace/programming/robotics/calibration/chessboard/intrinsics.json", "/workspace/programming/robotics/calibration/chessboard/left01.jpg", "--undistord"],
+      "purpose": ["debug-in-terminal"]
+    },
+
+    {
+      "name": "(gdb) Launch kitti_vo_testbench",
       "type": "cppdbg",
       "request": "launch",
-      "program": "/workspace/build/low_level_design/tictactoe/tictactoe_exec",
-      "args": [],
+      "program": "/atom/programming/robotics/sfm/build/kitti_vo_testbench",
+      "args": ["/data/tests_data/sfm/", "/atom/programming/robotics/sfm/out", "-s", "03", "-i", "0", "-e", "30", "-v"],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [],
@@ -28,7 +56,102 @@
           }
       ]
     },
-
+    {
+      "name": "(gdb) Launch sfm_example",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/atom/adas_dev_calibrations/cpp/sfm/tests/sfm_example/build/main",
+      "args": ["/data/tests_data/sfm/", "/atom/kitti_result", "-s", "03", "-e", "200"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel",
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "(gdb) Launch run_on_kitti",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/atom/adas_dev_calibrations/build/debug/cpp/sfm/run_on_kitti",
+      "args": ["--in", "/atom/BAG_2025_01_17_11_10_04", "--out", "/atom/BAG_2025_01_17_11_10_04_OUT", "-s",  "03", "-v", "-c", "/atom/adas_dev_calibrations/cpp/sfm/config/sfm.yaml", "--sfm", "simple"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel",
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "(gdb) Launch SimpleSFM.BAG_2025_03_24_15_17_47",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/workspace/adas_dev_calibrations/build/debug_cache/cpp/sfm/tests/sfm_test",
+      "args": ["--gtest_filter=SimpleSFM.BAG_2025_03_24_15_17_47"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel",
+              "ignoreFailures": true
+          }
+      ]
+    },
+    {
+      "name": "(gdb) Launch sfm_node",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/atom/adas_dev_calibrations/build/debug/cpp/sfm/sfm_node",
+      "args": ["--config=/atom/adas_dev_calibrations/cpp/sfm/config/node.yaml", "--out=/atom/data/kitti/results", "-v"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+          {
+              "description": "Enable pretty-printing for gdb",
+              "text": "-enable-pretty-printing",
+              "ignoreFailures": true
+          },
+          {
+              "description": "Set Disassembly Flavor to Intel",
+              "text": "-gdb-set disassembly-flavor intel",
+              "ignoreFailures": true
+          }
+      ]
+    },
     {
       "name": "g++ - Build and debug active file",
       "type": "cppdbg",
