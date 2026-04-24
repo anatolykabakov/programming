@@ -1,0 +1,7 @@
+# External Player build artifacts
+3pp/*
+build/*
+sysroot*
+.conan2*
+.venv*
+.gradle-android-docker/

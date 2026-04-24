@@ -17,3 +17,25 @@ target_include_directories(
   exception_handler
   PRIVATE ${BREAKPAD_DIR}
 )
+
+add_executable(
+  simple_backtrace
+  src/simple_backtrace.cpp
+)
+target_compile_options(
+  simple_backtrace
+  PRIVATE -g
+          -fno-omit-frame-pointer
+)
+target_link_options(simple_backtrace PRIVATE -rdynamic)
+
+add_executable(
+  coredump
+  src/coredump.cpp
+)
+target_compile_options(
+  coredump
+  PRIVATE -g
+          -fno-omit-frame-pointer
+)
+target_link_options(coredump PRIVATE -rdynamic)

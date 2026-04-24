@@ -4,26 +4,27 @@ services:
     container_name: dev_container
     build:
       context: .
+      network: host
       dockerfile: Dockerfile
-    privileged: true
-    tty: true
-    network_mode: "host"
+      args:
+        USERNAME: ${USER:-user}
+        USER_UID: ${UID:-1000}
+        USER_GID: ${GID:-1000}
+    extra_hosts:
+      - "registry.int.e-kama.com:10.124.1.143"
+      - "gitlab.int.e-kama.com:10.124.1.143"
     volumes:
-      - ../..:/data
-      - ..:/workspace/
+      - ~/:/workspace
+      - ~/.ssh:/home/${USER:-user}/.ssh
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ~/.Xauthority:/home/${USER:-user}/.Xauthority:rw
+    network_mode: "host"
+    restart: always
+    tty: true
+    ipc: host
+    working_dir: /workspace
     environment:
-      - QT_X11_NO_MITSHM=1
       - DISPLAY=${DISPLAY}
-      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility,graphics
-      - NVIDIA_VISIBLE_DEVICES=all
-
-  # dev_container_gpu:
-  #   container_name: dev_container
-  #   extends:
-  #     service: dev_container
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - capabilities: [gpu]
+      - USERNAME=${USER:-user}
+      - USER_UID=${UID:-1000}
+      - USER_GID=${GID:-1000}

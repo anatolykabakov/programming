@@ -1,54 +1,44 @@
-ARG VARIANT=ubuntu-22.04
-FROM mcr.microsoft.com/vscode/devcontainers/base:0-${VARIANT}
+FROM ubuntu:22.04
 
-# This Dockerfile's base image has a non-root user with sudo access. Use the "remoteUser"
-# property in devcontainer.json to use it. On Linux, the container user's GID/UIDs
-# will be updated to match your local UID/GID (when using the dockerFile property).
-# See https://aka.ms/vscode-remote/containers/non-root-user for details.
-ARG USERNAME=devel
+ARG USERNAME=${USERNAME:-user}
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-WORKDIR /workspace/
-
-ENV TERM xterm
-ENV SHELL /bin/zsh
-
-# Configure apt and install packages
-RUN apt-get update \
-    && export DEBIAN_FRONTEND=noninteractive \
-    # Install
-    && apt-get -y install \
-    git zip unzip python3-pip clang-format \
-    build-essential gdb cmake cppcheck \
-    valgrind kcachegrind golang kotlin \
-    #
-    # [Optional] Update UID/GID if needed
-    && if [ "$USER_GID" != "1000" ] || [ "$USER_UID" != "1000" ]; then \
-    groupmod --gid $USER_GID $USERNAME \
-    && usermod --uid $USER_UID --gid $USER_GID $USERNAME \
-    && chown -R $USER_UID:$USER_GID /home/$USERNAME; \
-    fi \
-    #
-    # Clean up
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.1.5/zsh-in-docker.sh)" -- \
-    -p git \
-    -p https://github.com/zsh-users/zsh-autosuggestions \
-    -p https://github.com/zsh-users/zsh-completions
-
-RUN echo "export DISABLE_AUTO_TITLE=true" >> /root/.zshrc
-RUN echo 'LC_NUMERIC="en_US.UTF-8"' >> /root/.zshrc
-
-RUN pip3 install conan pre-commit cmakelang
-RUN git config --global --add safe.directory /workspace
-
-RUN curl -s https://packagecloud.io/install/repositories/golang-migrate/migrate/script.deb.sh | sudo bash
-RUN sudo apt-get install migrate
-CMD ["zsh"]
-
-# RUN git submodule init
-# RUN git submodule update --recursive --remote
+ENV DEBIAN_FRONTEND=noninteractive
+# Install system packages
+RUN apt update && apt install -y \
+    # Basic utilities
+    curl git git-lfs wget zip unzip tar software-properties-common sudo \
+    # Build tools
+    cmake g++ gcc make build-essential ninja-build automake libtool autoconf-archive pkg-config \
+    # Cross-compilation toolchain (ARM64)
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+    # Python ecosystem
+    python3 python3-pip python3-tk python3-matplotlib \
+    # Text editors
+    nano vim gedit \
+    && apt clean && rm -rf /var/lib/apt/lists/*
+# Create non-root user and configure environment
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && usermod -aG sudo $USERNAME \
+    && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME
+# Install Python packages and setup symlinks
+RUN pip3 install jinja2 pre-commit cmakelang yapf pylint pybind11-stubgen conan
+# Install LLVM
+RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh \
+    && ./llvm.sh 20 \
+    && DEBIAN_FRONTEND=noninteractive apt update \
+    && apt install -y clang-tidy-20 clang-format-20 \
+    && ln -s /usr/bin/clang-tidy-20 /usr/bin/clang-tidy \
+    && ln -s /usr/bin/clang-format-20 /usr/bin/clang-format \
+    && clang-tidy --version && clang-format --version \
+    && apt clean && rm -rf /var/lib/apt/lists/* llvm.sh
+# Setup workspace and install zsh
+RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh-in-docker.sh)" -- \
+    -p git -p ssh-agent -p 'history-substring-search' \
+    -a 'bindkey "\$terminfo[kcuu1]" history-substring-search-up' \
+    -a 'bindkey "\$terminfo[kcud1]" history-substring-search-down'
+USER $USERNAME
+WORKDIR /workspace
