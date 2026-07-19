@@ -52,7 +52,7 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   LOGI("Connections established, preparing to send message");
 
   // Create and send protobuf IMU message to AdasApp
-  ai::flow::android::ZMQMessage zmq_msg;
+  ai::flow::adas::ZMQMessage zmq_msg;
   zmq_msg.set_topic("imuData");
   zmq_msg.set_timestamp(
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -102,7 +102,7 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   EXPECT_FALSE(message_data.empty()) << "Message should not be empty";
 
   // Deserialize received protobuf message
-  ai::flow::android::ZMQMessage received_msg;
+  ai::flow::adas::ZMQMessage received_msg;
   EXPECT_TRUE(received_msg.ParseFromString(message_data)) << "Should be able to parse received protobuf message";
 
   // Verify the message contains IMU data

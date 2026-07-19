@@ -6,44 +6,31 @@ Advanced Driver Assistance System (ADAS) application built with ServiceManager f
 
 ```
 cpp/
-├── docs/                           # Documentation
-│   └── SENSOR_TOPICS.md           # Internal sensor topics reference
+├── include/                        # Public headers
+│   ├── adas_app.h
+│   ├── framework/service_manager.hpp
+│   ├── panda/                      # Panda USB / CAN headers
+│   ├── services/                   # Service headers
+│   ├── utils/
+│   └── volkswagen/                 # MQB CarController / mqbcan
 │
-├── framework/                      # Core framework
-│   └── service_manager.hpp        # Service management framework (1042 lines)
+├── src/                            # Implementation
+│   ├── CMakeLists.txt
+│   ├── adas_app.cpp
+│   ├── adas_app_android.cpp
+│   ├── adas_app_linux.cpp
+│   ├── panda/
+│   ├── services/
+│   ├── utils/
+│   └── volkswagen/
 │
-├── services/                       # Application services
-│   ├── panda_service.h/cpp        # CAN data from Panda device (117 lines)
-│   ├── sensor_reader_service.h/cpp # Sensor data processing (167 lines)
-│   └── zmq_bridge_service.h/cpp   # External ZMQ to internal bridge (132 lines)
-│
-├── examples/                       # Example implementations
-│   └── example_sensor_consumer_service.h/cpp  # Example consumer (155 lines)
+├── scripts/
+│   └── build_cpp.sh                # Conan + CMake build
 │
 ├── tests/                          # Unit tests
-│   ├── test_service_manager.cpp   # ServiceManager tests (10 tests, 947 lines)
-│   ├── test_zmq_imu.cpp          # ZMQ integration test
-│   ├── test_utils.h/cpp          # Test utilities
-│   └── main.cpp                  # Test runner
-│
-├── panda/                          # Panda device library
-│   ├── panda.h/cc                # Panda device interface
-│   └── panda_comms.h/cc          # USB communications
-│
-├── utils/                          # Utility tools
-│   ├── can_parser.cc             # CAN message parser
-│   ├── log_parser.cc             # Log file parser
-│   └── steering_control.cc       # Steering control utilities
-│
-├── adas_app.h/cpp                 # Main application class (86 lines)
-├── adas_app_android.cpp           # Android platform implementation
-├── adas_app_linux.cpp             # Linux platform implementation
-├── logger.h                       # Logging utilities
-├── protobuf_utils.h/cpp          # Protobuf helpers
-├── CMakeLists.txt                # Build configuration
-├── vcpkg.json                    # Dependencies
-└── build_cpp.sh                  # Build script
-
+├── profiles/                       # Conan profiles
+├── CMakeLists.txt
+└── conanfile.py
 ```
 
 ## Architecture
@@ -99,27 +86,27 @@ The application uses a service-oriented architecture with the ServiceManager fra
 
 ### Android (ARM64)
 ```bash
-./build_cpp.sh -t android
+./scripts/build_cpp.sh -t android
 # Output: build/libadas_app.so (64MB)
 # Copies to: ../libs/arm64-v8a/
 ```
 
 ### Linux (x86_64)
 ```bash
-./build_cpp.sh -t linux
+./scripts/build_cpp.sh -t linux
 # Output: build/libadas_app.so
 ```
 
 ### With Tests
 ```bash
-./build_cpp.sh -t linux --test
+./scripts/build_cpp.sh -t linux --test
 # Runs: 10 ServiceManager tests + 1 ZMQ integration test
 ```
 
 ### Clean Build
 ```bash
-./build_cpp.sh -c -t android  # Clean + Android
-./build_cpp.sh -c -t linux    # Clean + Linux
+./scripts/build_cpp.sh -c -t android  # Clean + Android
+./scripts/build_cpp.sh -c -t linux    # Clean + Linux
 ```
 
 ## Services
@@ -178,7 +165,7 @@ class MyService : public microros::Service
 public:
     void configure() override {
         // Subscribe to topics
-        subscribe<ai::flow::android::ZMQMessage>("sensors/imu",
+        subscribe<ai::flow::adas::ZMQMessage>("sensors/imu",
             [this](const auto& msg) {
                 if (msg.has_imu_data()) {
                     const auto& imu = msg.imu_data();

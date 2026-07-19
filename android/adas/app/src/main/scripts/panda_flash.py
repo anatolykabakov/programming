@@ -543,7 +543,9 @@ Examples:
     parser.add_argument("--force", action="store_true", help="Force flash even if firmware matches")
 
     parser.add_argument(
-        "--check-only", action="store_true", help="Only check firmware version, don't flash"
+        "--check-only",
+        action="store_true",
+        help="Only check firmware version, don't flash",
     )
 
     parser.add_argument(

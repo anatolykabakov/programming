@@ -80,3 +80,22 @@ target_compile_options(
           -fno-omit-frame-pointer
 )
 target_link_options(xiaomi_robot PRIVATE -rdynamic)
+
+set_target_properties(
+  xiaomi_robot
+  PROPERTIES OUTPUT_NAME xiaomi_robot
+)
+
+install(
+  TARGETS xiaomi_robot
+  EXPORT XiaomiRobotTargets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+  FILES_MATCHING
+  PATTERN "*.hpp|*.h"
+)

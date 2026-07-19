@@ -1,86 +1,23 @@
 #!/bin/bash
-#
-# Generate Python protobuf files from .proto definitions
-#
-
 set -e
-
-PROTO_DIR="../proto"
-OUTPUT_DIR="$PROTO_DIR"
-
-echo "🔧 Generating Python protobuf files..."
-echo "   Proto directory: $PROTO_DIR"
-echo "   Output directory: $OUTPUT_DIR"
-echo ""
-
 cd "$(dirname "$0")"
+PROTO_DIR="../proto"
+OUTPUT_DIR="./vis/proto"
+mkdir -p "$OUTPUT_DIR"
 
-# Check if protoc is installed
-if ! command -v protoc &> /dev/null; then
-    echo "❌ ERROR: protoc not found!"
-    echo "   Please install protobuf compiler:"
-    echo "   - Ubuntu/Debian: sudo apt-get install protobuf-compiler python3-protobuf"
-    echo "   - MacOS: brew install protobuf"
+PROTOC="${PROTOC:-}"
+if [ -z "$PROTOC" ]; then
+  if [ -x "$HOME/.local/protoc/bin/protoc" ]; then
+    PROTOC="$HOME/.local/protoc/bin/protoc"
+  elif command -v protoc >/dev/null 2>&1; then
+    PROTOC="$(command -v protoc)"
+  else
+    echo "protoc not found (install or set PROTOC=)"
     exit 1
+  fi
 fi
 
-echo "✅ protoc found: $(protoc --version)"
-echo ""
-
-# Generate Python files
-echo "📦 Generating Python protobuf files..."
-
-protoc \
-    --proto_path="$PROTO_DIR" \
-    --python_out="$OUTPUT_DIR" \
-    "$PROTO_DIR"/*.proto
-
-echo ""
-echo "✅ Generated Python protobuf files:"
-ls -lh "$OUTPUT_DIR"/*_pb2.py 2>/dev/null || echo "   (No _pb2.py files found)"
-
-echo ""
-echo "🎉 Done! You can now use send_steering_command.py"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+echo "Using $PROTOC ($($PROTOC --version))"
+"$PROTOC" --proto_path="$PROTO_DIR" --proto_path="$HOME/.local/protoc/include" \
+  --python_out="$OUTPUT_DIR" "$PROTO_DIR"/*.proto
+ls -1 "$OUTPUT_DIR"/*_pb2.py

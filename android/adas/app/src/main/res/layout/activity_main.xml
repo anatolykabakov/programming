@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="ai.flow.android.MainActivity">
+    tools:context="ai.flow.adas.MainActivity">
 
     <!-- Camera background -->
 
@@ -22,9 +22,20 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="1.0" />
 
+    <ai.flow.adas.vision.LaneOverlayView
+        android:id="@+id/laneOverlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/transparent"
+        app:layout_constraintBottom_toBottomOf="@id/textureView"
+        app:layout_constraintEnd_toEndOf="@id/textureView"
+        app:layout_constraintStart_toStartOf="@id/textureView"
+        app:layout_constraintTop_toTopOf="@id/textureView" />
+
+    <!-- Landscape road view (flowpilot-style); buttons along the bottom edge -->
     <LinearLayout
-        android:layout_width="411dp"
-        android:layout_height="114dp"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="4dp"
         app:layout_constraintBottom_toBottomOf="parent"

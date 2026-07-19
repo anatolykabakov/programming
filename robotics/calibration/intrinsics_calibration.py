@@ -11,9 +11,9 @@ import json
 def calibrate_chessboard(images_path, rows=7, cols=6, square_size=30, verbose=False):
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
-    objp = np.zeros((rows*cols,3), np.float32)
-    objp[:,:2] = np.mgrid[0:rows,0:cols].T.reshape(-1,2) * square_size
- 
+    objp = np.zeros((rows * cols, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:rows, 0:cols].T.reshape(-1, 2) * square_size
+
     # Arrays to store object points and image points from all the images.
     objpoints = []  # 3d point in real world space
     imgpoints = []  # 2d points in image plane.
@@ -69,15 +69,9 @@ if __name__ == "__main__":
         default="chessboard/intrinsics.json",
         help="path to intrinsics calibration",
     )
-    parser.add_argument(
-        "--square-size", type=float, default=30, help="Size of square in mm"
-    )
-    parser.add_argument(
-        "--rows", type=int, default=7, help=""
-    )
-    parser.add_argument(
-        "--cols", type=int, default=6, help=""
-    )
+    parser.add_argument("--square-size", type=float, default=30, help="Size of square in mm")
+    parser.add_argument("--rows", type=int, default=7, help="")
+    parser.add_argument("--cols", type=int, default=6, help="")
 
     args = parser.parse_args()
 

@@ -15,6 +15,12 @@ class GridMap:
         else:
             return 0.5
 
+    def GetBinaryMap(self):
+        return np.array([1 if self.GetGridProb(pos) > 0.5 else 0 for pos in self.gmap.keys()])
+
+    def GetProbMap(self):
+        return np.array([self.GetGridProb(pos) for pos in self.gmap.keys()])
+
     def GetCoordProb(self, pos):
         x, y = int(round(pos[0] / self.gsize)), int(round(pos[1] / self.gsize))
         return self.GetGridProb((x, y))

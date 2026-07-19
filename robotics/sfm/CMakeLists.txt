@@ -15,7 +15,6 @@ find_package(dds_data_structures CONFIG REQUIRED)
 find_package(PCL CONFIG REQUIRED)
 find_package(Boost CONFIG REQUIRED program_options)
 
-
 add_library(dds_helper src/dds.cpp)
 
 target_link_libraries(

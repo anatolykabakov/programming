@@ -16,3 +16,9 @@ option(
 
 add_subdirectory(proto)
 add_subdirectory(cpp)
+
+install(
+  EXPORT XiaomiRobotTargets
+  NAMESPACE xiaomi_robot::
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)

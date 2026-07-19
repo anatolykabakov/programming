@@ -119,3 +119,18 @@ class ParticleFilter:
             # self.particle_list[i].Mapping(sensor_data)
 
         self.weights = self._normalize_weights(field)
+
+    def best_index(self) -> int:
+        return int(np.argmax(self.weights))
+
+    def best_particle(self) -> Particle:
+        return self.particle_list[self.best_index()]
+
+    def update(self, control, sensor_data):
+        """
+        One SLAM tick: Feed → Resampling (maps on resampled particles).
+        """
+        self.Feed(control, sensor_data)
+        self.Resampling(sensor_data)
+        best = self.best_particle()
+        return {"pose": best.pos, "gmap": best.gmap}

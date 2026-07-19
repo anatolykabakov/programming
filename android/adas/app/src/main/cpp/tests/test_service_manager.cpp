@@ -613,7 +613,7 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
 
     void publishMockImuData()
     {
-      ai::flow::android::ZMQMessage msg;
+      ai::flow::adas::ZMQMessage msg;
       msg.set_topic("imuData");
       msg.set_timestamp(123456789);
 
@@ -636,7 +636,7 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
 
     void publishMockCanData()
     {
-      ai::flow::android::ZMQMessage msg;
+      ai::flow::adas::ZMQMessage msg;
       msg.set_topic("pandaData");
       msg.set_timestamp(987654321);
 
@@ -664,11 +664,11 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
     void configure() override
     {
       // Subscribe to internal sensor topics
-      subscribe<ai::flow::android::ZMQMessage>("sensors/imu",
-                                               [this](const ai::flow::android::ZMQMessage& msg) { handleImu(msg); });
+      subscribe<ai::flow::adas::ZMQMessage>("sensors/imu",
+                                            [this](const ai::flow::adas::ZMQMessage& msg) { handleImu(msg); });
 
-      subscribe<ai::flow::android::ZMQMessage>("sensors/can",
-                                               [this](const ai::flow::android::ZMQMessage& msg) { handleCan(msg); });
+      subscribe<ai::flow::adas::ZMQMessage>("sensors/can",
+                                            [this](const ai::flow::adas::ZMQMessage& msg) { handleCan(msg); });
 
       LOGI("InternalTopicConsumer: configured with subscriptions");
     }
@@ -681,7 +681,7 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
       last_can_address_ = 0;
     }
 
-    void handleImu(const ai::flow::android::ZMQMessage& msg)
+    void handleImu(const ai::flow::adas::ZMQMessage& msg)
     {
       imu_count_++;
       if (msg.has_imu_data()) {
@@ -691,7 +691,7 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
       }
     }
 
-    void handleCan(const ai::flow::android::ZMQMessage& msg)
+    void handleCan(const ai::flow::adas::ZMQMessage& msg)
     {
       can_count_++;
       if (msg.has_can_data()) {
@@ -775,7 +775,7 @@ TEST(ServiceManagerTest, FullZmqIntegration)
     void configure() override
     {
       // Subscribe to internal sensor topics
-      subscribe<ai::flow::android::ZMQMessage>("sensors/imu", [this](const ai::flow::android::ZMQMessage& msg) {
+      subscribe<ai::flow::adas::ZMQMessage>("sensors/imu", [this](const ai::flow::adas::ZMQMessage& msg) {
         if (msg.has_imu_data()) {
           const auto& imu = msg.imu_data();
           last_accel_z_ = imu.accel_z();
@@ -784,19 +784,17 @@ TEST(ServiceManagerTest, FullZmqIntegration)
         }
       });
 
-      subscribe<ai::flow::android::ZMQMessage>("sensors/accelerometer",
-                                               [this](const ai::flow::android::ZMQMessage& msg) {
-                                                 if (msg.has_accelerometer_data()) {
-                                                   accel_received_ = true;
-                                                   LOGI("SensorDataConsumer: Accelerometer received");
-                                                 }
-                                               });
+      subscribe<ai::flow::adas::ZMQMessage>("sensors/accelerometer", [this](const ai::flow::adas::ZMQMessage& msg) {
+        if (msg.has_accelerometer_data()) {
+          accel_received_ = true;
+          LOGI("SensorDataConsumer: Accelerometer received");
+        }
+      });
 
-      subscribe<ai::flow::android::ZMQMessage>("sensors/gps/location",
-                                               [this](const ai::flow::android::ZMQMessage& msg) {
-                                                 gps_received_ = true;
-                                                 LOGI("SensorDataConsumer: GPS location received");
-                                               });
+      subscribe<ai::flow::adas::ZMQMessage>("sensors/gps/location", [this](const ai::flow::adas::ZMQMessage& msg) {
+        gps_received_ = true;
+        LOGI("SensorDataConsumer: GPS location received");
+      });
 
       LOGI("SensorDataConsumer: configured");
     }
@@ -873,7 +871,7 @@ TEST(ServiceManagerTest, FullZmqIntegration)
 
   // Create and send IMU data
   {
-    ai::flow::android::ZMQMessage imu_msg;
+    ai::flow::adas::ZMQMessage imu_msg;
     imu_msg.set_topic("sensors/imu");
     imu_msg.set_timestamp(111111111);
 
@@ -896,7 +894,7 @@ TEST(ServiceManagerTest, FullZmqIntegration)
   }
 
   {
-    ai::flow::android::ZMQMessage accel_msg;
+    ai::flow::adas::ZMQMessage accel_msg;
     accel_msg.set_topic("sensors/accelerometer");
     accel_msg.set_timestamp(222222222);
 
@@ -916,7 +914,7 @@ TEST(ServiceManagerTest, FullZmqIntegration)
 
   // Create and send GPS location data
   {
-    ai::flow::android::ZMQMessage gps_msg;
+    ai::flow::adas::ZMQMessage gps_msg;
     gps_msg.set_topic("sensors/gps/location");
     gps_msg.set_timestamp(333333333);
 

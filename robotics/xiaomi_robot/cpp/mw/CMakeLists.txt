@@ -41,3 +41,22 @@ target_link_libraries(
   PRIVATE microros
           pthread
 )
+
+set_target_properties(
+  middleware
+  PROPERTIES OUTPUT_NAME middleware
+)
+
+install(
+  TARGETS middleware
+  EXPORT XiaomiRobotTargets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+  FILES_MATCHING
+  PATTERN "*.hpp|*.h"
+)

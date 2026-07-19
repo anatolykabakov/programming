@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package ai.flow.android;
+package ai.flow.adas;
 
 // Single CAN frame
 message CANFrame {

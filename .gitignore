@@ -19,9 +19,10 @@ local.properties
 *android/adas/app/src/main/cpp/build/*
 *android/adas/app/build/*
 *android/adas/app/libs/*
+*android/adas/.tools/*
 *.log
 *.pyc
-*.png
+# *.png
 *.xml
 *.bin
 *.yml

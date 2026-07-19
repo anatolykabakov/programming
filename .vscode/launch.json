@@ -6,9 +6,9 @@
   "configurations": [
 
 
-    
-  
-  
+
+
+
 
     {
       "name": "Python: intrinsics_calibration",
@@ -20,7 +20,7 @@
       "args": ["/workspace/programming/robotics/calibration/chessboard"],
       "purpose": ["debug-in-terminal"]
     },
-    
+
     {
       "name": "Python: extrinsic_calibration.py",
       "type": "python",

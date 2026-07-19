@@ -14,8 +14,10 @@ import zmq
 import time
 import argparse
 import sys
+from pathlib import Path
 
 # Import generated protobuf files
+sys.path.insert(0, str(Path(__file__).resolve().parent / "vis" / "proto"))
 import messages_pb2
 import can_pb2
 
@@ -646,7 +648,9 @@ All verified on real CAN logs! Source: https://gorgias.me/posts/vw-id.4-车控�
 
     # Connection
     parser.add_argument(
-        "--endpoint", default="tcp://localhost:8003", help="ZMQ endpoint (default: localhost:8003)"
+        "--endpoint",
+        default="tcp://localhost:8003",
+        help="ZMQ endpoint (default: localhost:8003)",
     )
     parser.add_argument("--repeat", type=int, default=1, help="Repeat N times")
     parser.add_argument("--hz", type=int, default=10, help="Frequency (Hz)")

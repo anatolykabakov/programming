@@ -4,18 +4,19 @@ plugins {
 }
 
 android {
-    namespace 'ai.flow.android'
+    namespace 'ai.flow.adas'
     compileSdk 34
+    buildToolsVersion "34.0.0"
 
     defaultConfig {
-        applicationId "ai.flow.android"
+        applicationId "ai.flow.adas"
         minSdk 24
         targetSdk 34
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        
+
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -27,20 +28,21 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
-    
+
     sourceSets {
         main {
             jniLibs.srcDirs = ['libs']
         }
     }
-    
-    ndkVersion "25.1.8937393"
-    
+
+    // Prebuilt .so via jniLibs; NDK path from local.properties / ANDROID_NDK_ROOT
+    // ndkVersion omitted on purpose — avoid AGP downloading a mismatched NDK
+
 //    externalNativeBuild {
 //        cmake {
 //            path "src/main/cpp/CMakeLists.txt"
@@ -51,12 +53,15 @@ android {
 //
     packagingOptions {
         pickFirst '**/libc++_shared.so'
-        pickFirst '**/libjsc.so'
-        pickFirst '**/services.yaml'
         pickFirst '**/libprotobuf.so'
         pickFirst '**/libprotobuf-lite.so'
         pickFirst '**/libprotoc.so'
         pickFirst '**/libzmq.so'
+    }
+
+    // Keep ONNX uncompressed so assets copy / ORT can read efficiently
+    androidResources {
+        noCompress 'onnx'
     }
 }
 
@@ -64,37 +69,21 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
-    
-    // OpenPilot AAR
-    implementation files('libs/openpilot-0.1-arm64-v8a-debug.aar')
-    
-    // Cereal modules - using JAR files instead of projects
-    // implementation files('libs/definitions.jar')
-    
-    // Cap'n Proto
-    implementation 'org.capnproto:runtime:0.1.13'
-    
+
     // Protocol Buffers
     implementation 'com.google.protobuf:protobuf-java:3.24.4'
     implementation 'com.google.protobuf:protobuf-java-util:3.24.4'
-    
+
     // ZeroMQ
     implementation 'org.zeromq:jeromq:0.6.0'
-    
-    // YAML support
-    implementation 'org.yaml:snakeyaml:1.18:android'
-    
+
     // Logging
     implementation 'org.slf4j:slf4j-api:1.7.30'
     implementation 'org.slf4j:slf4j-simple:1.7.30'
-    
-    // ZMQ for C++
-    implementation 'org.zeromq:jeromq:0.6.0'
 
-    // Video processing (using Android MediaRecorder instead of JavaCV)
-    
-    // Native libraries are in src/main/jniLibs/arm64-v8a/
-    
+    // Supercombo ONNX (see vision/SupercomboOnnxRunner)
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.3'
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'

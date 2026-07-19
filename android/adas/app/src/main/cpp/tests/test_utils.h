@@ -73,9 +73,9 @@ public:
   }
 
   // Create test IMU message
-  static ai::flow::android::ZMQMessage createTestIMUMessage(const TestIMUData& data)
+  static ai::flow::adas::ZMQMessage createTestIMUMessage(const TestIMUData& data)
   {
-    ai::flow::android::ZMQMessage zmq_msg;
+    ai::flow::adas::ZMQMessage zmq_msg;
     zmq_msg.set_topic("imuData");
     zmq_msg.set_timestamp(data.timestamp);
 
@@ -95,7 +95,7 @@ public:
   }
 
   // Serialize protobuf message to bytes
-  static std::vector<uint8_t> serializeMessage(const ai::flow::android::ZMQMessage& msg)
+  static std::vector<uint8_t> serializeMessage(const ai::flow::adas::ZMQMessage& msg)
   {
     std::string serialized;
     msg.SerializeToString(&serialized);
@@ -103,7 +103,7 @@ public:
   }
 
   // Verify IMU data in a message
-  static bool verifyIMUData(const ai::flow::android::ZMQMessage& message, const TestIMUData& expectedData)
+  static bool verifyIMUData(const ai::flow::adas::ZMQMessage& message, const TestIMUData& expectedData)
   {
     if (!message.has_imu_data()) {
       return false;
@@ -123,7 +123,7 @@ public:
   }
 
   // Parse protobuf message from bytes
-  static bool parseMessage(const std::vector<uint8_t>& data, ai::flow::android::ZMQMessage& msg)
+  static bool parseMessage(const std::vector<uint8_t>& data, ai::flow::adas::ZMQMessage& msg)
   {
     std::string serialized(data.begin(), data.end());
     return msg.ParseFromString(serialized);

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package ai.flow.android;
+package ai.flow.adas;
 
 import "camera.proto";
 import "gps.proto";
@@ -8,12 +8,15 @@ import "imu.proto";
 import "can.proto";
 import "panda.proto";
 import "camera_intrinsics.proto";
+import "lanes.proto";
+import "car_state.proto";
+import "steer.proto";
 
 // Main message wrapper for ZMQ
 message ZMQMessage {
     int64 timestamp = 1;
     string topic = 2;
-    
+
     oneof payload {
         CameraImage camera_image = 3;
         GPSLocation gps_location = 5;
@@ -22,10 +25,8 @@ message ZMQMessage {
         CANData can_data = 11;
         PandaHealth panda_health = 12;
         CameraIntrinsics camera_intrinsics = 13;
+        LaneLines lane_lines = 14;
+        CarState car_state = 15;
+        SteerCommand steer_command = 16;
     }
 }
-
-
-
-
-

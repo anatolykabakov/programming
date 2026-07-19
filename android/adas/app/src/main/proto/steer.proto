@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package ai.flow.adas;
+
+option java_outer_classname = "SteerOuter";
+
+// Desired lateral command for CarController (not a raw CAN frame).
+message SteerCommand {
+  // Assist torque in cNm, signed. Openpilot left = negative. Clamp ±300.
+  int32 torque_cnm = 1;
+  // When false (or torque==0), CarController stays in HCA standby.
+  bool enabled = 2;
+}

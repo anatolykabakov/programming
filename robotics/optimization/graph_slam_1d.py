@@ -46,18 +46,10 @@ def build_linear_system(odom, obs):
         B = edge.B
         OMEGA = edge.OMEGA
 
-        H[id1 : id1 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(
-            np.multiply(A.T, OMEGA), A
-        )
-        H[id1 : id1 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(
-            np.multiply(A.T, OMEGA), B
-        )
-        H[id2 : id2 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(
-            np.multiply(B.T, OMEGA), A
-        )
-        H[id2 : id2 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(
-            np.multiply(B.T, OMEGA), B
-        )
+        H[id1 : id1 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(np.multiply(A.T, OMEGA), A)
+        H[id1 : id1 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(np.multiply(A.T, OMEGA), B)
+        H[id2 : id2 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(np.multiply(B.T, OMEGA), A)
+        H[id2 : id2 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(np.multiply(B.T, OMEGA), B)
 
         b[id1 : id1 + STATE_SIZE] += np.multiply(np.multiply(A.T, OMEGA), edge.e)
         b[id2 : id2 + STATE_SIZE] += np.multiply(np.multiply(B.T, OMEGA), edge.e)
@@ -85,10 +77,10 @@ if __name__ == "__main__":
     z = np.array([[1.0], [1.0], [1.0]])
     tolerance = 0.01
 
-    plt.plot(x, np.zeros(x.shape), '.', markersize=20, label='init guess')
+    plt.plot(x, np.zeros(x.shape), ".", markersize=20, label="init guess")
     x_opt = optimize(x, z, tolerance)
     print(x_opt)
 
-    plt.plot(xTrue, np.zeros(xTrue.shape), '.', markersize=20, label='Ground truth')
-    plt.plot(x_opt, np.zeros(x_opt.shape), '.', markersize=20, label='estimate')
+    plt.plot(xTrue, np.zeros(xTrue.shape), ".", markersize=20, label="Ground truth")
+    plt.plot(x_opt, np.zeros(x_opt.shape), ".", markersize=20, label="estimate")
     plt.show()

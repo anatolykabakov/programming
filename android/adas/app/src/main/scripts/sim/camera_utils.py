@@ -1,6 +1,17 @@
 #! /usr/bin/env python3
+"""MetaDrive camera intrinsics / extrinsics → AAD overlay parameters."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
+
+try:
+    from metadrive.constants import DEFAULT_SENSOR_HPR, DEFAULT_SENSOR_OFFSET
+except ImportError:  # pragma: no cover
+    DEFAULT_SENSOR_OFFSET = (0.0, 0.8, 1.5)
+    DEFAULT_SENSOR_HPR = (0.0, 0.0, 0.0)
 
 
 class ZupRightHandCS:
@@ -17,7 +28,6 @@ class ZupRightHandCS:
         return self.rotation_z(yaw_deg) @ self.rotation_y(pitch_deg) @ self.rotation_x(roll_deg)
 
     def rotation_x(self, angle_deg):
-        """Поворот вокруг оси X (roll)"""
         angle_rad = np.deg2rad(angle_deg)
         return np.array(
             [
@@ -28,7 +38,6 @@ class ZupRightHandCS:
         )
 
     def rotation_y(self, angle_deg):
-        """Поворот вокруг оси Y (pitch)"""
         angle_rad = np.deg2rad(angle_deg)
         return np.array(
             [
@@ -39,7 +48,6 @@ class ZupRightHandCS:
         )
 
     def rotation_z(self, angle_deg):
-        """Поворот вокруг оси Z (yaw)"""
         angle_rad = np.deg2rad(angle_deg)
         return np.array(
             [
@@ -49,30 +57,89 @@ class ZupRightHandCS:
             ]
         )
 
+
+def panda_vehicle_to_iso(xyz_panda: np.ndarray) -> np.ndarray:
+    """Panda vehicle frame (X right, Y forward, Z up) → ISO (X fwd, Y left, Z up)."""
+    x_r, y_f, z_u = float(xyz_panda[0]), float(xyz_panda[1]), float(xyz_panda[2])
+    return np.array([y_f, -x_r, z_u], dtype=np.float64)
+
+
 class CameraParams:
-    def __init__(self, env):
-        rgb_camera = env.engine.get_sensor("rgb")
+    """Read MetaDrive RGB camera K / pose and expose AAD overlay params."""
+
+    def __init__(self, env, sensor_name: str = "rgb"):
+        self.env = env
+        rgb_camera = env.engine.get_sensor(sensor_name)
+        self.sensor = rgb_camera
         self.fov = rgb_camera.lens.getFov()
         self.width = rgb_camera.BUFFER_W
         self.height = rgb_camera.BUFFER_H
         self.intrinsics = self.make_intrinsics(self.fov, self.width, self.height)
 
-        hpr = rgb_camera.cam.getHpr(env.agent.origin)
-        xyz = rgb_camera.cam.getPos(env.engine.render)
-        self.extrinsics = self.make_extrinsics(xyz, hpr)
+        # Ensure camera is mounted on the ego (same as MetaDrive image obs)
+        self.mount_on_agent()
+        self.refresh_pose()
+
+    def mount_on_agent(
+        self,
+        offset: Optional[Tuple[float, float, float]] = None,
+        hpr: Optional[Tuple[float, float, float]] = None,
+    ) -> None:
+        """Track RGB camera to ego with MetaDrive default windshield mount."""
+        offset = tuple(offset) if offset is not None else tuple(DEFAULT_SENSOR_OFFSET)
+        hpr = tuple(hpr) if hpr is not None else tuple(DEFAULT_SENSOR_HPR)
+        # MetaDrive sometimes uses a small look-up pitch when switching agents
+        if hpr == tuple(DEFAULT_SENSOR_HPR):
+            # Keep slight windshield pitch used by base_env.switch_to_next_vehicle
+            hpr = (0.0, 0.59681, 0.0)
+        self.mount_offset = np.array(offset, dtype=np.float64)
+        self.mount_hpr = np.array(hpr, dtype=np.float64)
+        self.sensor.track(self.env.agent.origin, offset, hpr)
+
+    def refresh_pose(self) -> None:
+        """Re-read pose relative to vehicle origin (Panda frame)."""
+        rgb_camera = self.sensor
+        agent = self.env.agent
+        hpr = np.array(rgb_camera.cam.getHpr(agent.origin), dtype=np.float64)
+        xyz_panda = np.array(rgb_camera.cam.getPos(agent.origin), dtype=np.float64)
+        self.hpr = hpr  # heading, pitch, roll (deg) in Panda vehicle frame
+        self.xyz_panda = xyz_panda  # X right, Y forward, Z up
+        self.xyz_iso = panda_vehicle_to_iso(xyz_panda)  # X fwd, Y left, Z up
+        self.height_m = float(self.xyz_iso[2])
+        self.cam_x = float(self.xyz_iso[0])
+        self.cam_y_left = float(self.xyz_iso[1])
+        self.extrinsics = self.make_extrinsics_iso(self.xyz_iso, hpr)
+
+    def aad_overlay_params(self) -> Dict[str, float]:
+        """Parameters for ``make_overlay_geometry`` / AAD ``CameraGeometry``.
+
+        MetaDrive mount defaults ≈ offset (0, 0.8, 1.5) panda, pitch ≈ +0.6°
+        (slight look-up). AAD: pitch_deg < 0 looks down, so panda pitch maps 1:1
+        (positive panda pitch → positive AAD pitch = look up).
+        """
+        heading, pitch, roll = (float(x) for x in self.hpr)
+        return {
+            "camera_height": float(self.height_m),
+            "cam_x": float(self.cam_x),
+            "cam_y_left": float(self.cam_y_left),
+            # Panda heading+: left turn; AAD yaw uses opposite sign in road frame
+            "yaw_deg": float(-heading),
+            "pitch_deg": float(pitch),
+            "roll_deg": float(roll),
+        }
 
     def get_fov(self):
         return self.fov
-    
+
     def get_width(self):
         return self.width
-    
+
     def get_height(self):
         return self.height
 
     def get_intrinsics(self):
         return self.intrinsics
-    
+
     def get_extrinsics(self):
         return self.extrinsics
 
@@ -81,27 +148,59 @@ class CameraParams:
         f_y = (height / 2) / (np.tan(fov[1] / 2 / 180 * np.pi))
         u0 = width / 2
         v0 = height / 2
-        return np.array([[f_x, 0, u0], [0, f_y, v0], [0, 0, 1]])
+        return np.array([[f_x, 0, u0], [0, f_y, v0], [0, 0, 1]], dtype=np.float64)
 
-    def make_extrinsics(self, xyz, hpr):
-        zup_right_hand_cs = ZupRightHandCS()
-        height = xyz[2]
-        pitch_deg = hpr[1]
-        T = zup_right_hand_cs.transform(
-            x=0.0, y=0.0, z=-height,
-            yaw_deg=hpr[0], pitch_deg=pitch_deg, roll_deg=hpr[2])
+    def make_extrinsics_iso(self, xyz_iso: np.ndarray, hpr: np.ndarray) -> np.ndarray:
+        """ISO ego (X fwd, Y left, Z up) → OpenCV camera 4×4.
 
-        RoadCSToCameraCS = np.array(
+        Uses vehicle-local mount (not world Z).
+        """
+        height = float(xyz_iso[2])
+        cam_x = float(xyz_iso[0])
+        cam_y_left = float(xyz_iso[1])
+        # Build pose in ISO then convert axes to OpenCV camera
+        # Camera center in ISO: (cam_x, cam_y_left, height)
+        # Rotation from HPR in Panda: apply pitch about vehicle lateral
+        pitch_deg = float(hpr[1])
+        yaw_deg = float(hpr[0])
+        roll_deg = float(hpr[2])
+
+        zup = ZupRightHandCS()
+        # Translate so camera is at origin looking with R; road points expressed in cam
+        # T_iso_cam_from_road: rotate then translate by -R @ C
+        R_yaw = zup.rotation_z(yaw_deg)
+        R_pitch = zup.rotation_y(pitch_deg)
+        R_roll = zup.rotation_x(roll_deg)
+        # Vehicle-local ISO rotation (yaw about up, pitch about left→right? use Y-left pitch)
+        # Match previous pipeline: pitch about Y (left), yaw about Z (up)
+        R_iso = R_yaw @ R_pitch @ R_roll
+        C = np.array([cam_x, cam_y_left, height], dtype=np.float64)
+        # World(ISO)→camera_ISO (still Xfwd Yleft Zup axes at camera)
+        W2C_iso = np.eye(4)
+        W2C_iso[:3, :3] = R_iso.T
+        W2C_iso[:3, 3] = -R_iso.T @ C
+
+        # ISO camera axes → OpenCV (X right, Y down, Z forward)
+        IsoCamToOpenCV = np.array(
             [
-                [0, -1, 0, 0],  # Xc = -Yr
-                [0, 0, -1, 0],  # Yc = -Zr
-                [1, 0, 0, 0],  # Zc = Xr
+                [0, -1, 0, 0],  # Xc = -Y_iso (= right)
+                [0, 0, -1, 0],  # Yc = -Z_iso (= down)
+                [1, 0, 0, 0],  # Zc =  X_iso (= forward)
                 [0, 0, 0, 1],
-            ]
+            ],
+            dtype=np.float64,
         )
+        return IsoCamToOpenCV @ W2C_iso
 
-        W2C = RoadCSToCameraCS @ T
-        return W2C
+    # Back-compat alias used by older make_extrinsics call sites
+    def make_extrinsics(self, xyz, hpr):
+        xyz = np.asarray(xyz, dtype=np.float64)
+        if xyz.shape[0] >= 3 and abs(xyz[2]) > abs(xyz[0]) + 0.5:
+            # Likely world position mistaken for local — treat as height-only
+            xyz_iso = np.array([0.0, 0.0, float(xyz[2])], dtype=np.float64)
+        else:
+            xyz_iso = panda_vehicle_to_iso(xyz) if abs(xyz[1]) > abs(xyz[0]) else xyz
+        return self.make_extrinsics_iso(xyz_iso, np.asarray(hpr, dtype=np.float64))
 
 
 class CameraGeometry:
@@ -110,19 +209,16 @@ class CameraGeometry:
         self.Rt = Rt
 
     def xyz_to_uv(self, xyz):
-        xyz_homo = np.stack(
-            (xyz[:, 0], xyz[:, 1], xyz[:, 2], np.ones_like(xyz[:, 0]))
-        )  # Shape: (4, N)
+        xyz_homo = np.stack((xyz[:, 0], xyz[:, 1], xyz[:, 2], np.ones_like(xyz[:, 0])))
         uvw = self.K @ self.Rt[:3, :] @ xyz_homo
         u = uvw[0, :] / uvw[2, :]
         v = uvw[1, :] / uvw[2, :]
         return np.stack((u, v)).T
 
     def uv_to_xyz(self, uv):
-        uv_coords = np.stack([uv[:, 0], uv[:, 1], np.ones_like(uv[:, 0])])  # Shape: (N, 3)
+        uv_coords = np.stack([uv[:, 0], uv[:, 1], np.ones_like(uv[:, 0])])
         K_inv = np.linalg.inv(self.K)
-        xyz_camera = (K_inv @ uv_coords.T).T  # Shape: (3, N)
+        xyz_camera = (K_inv @ uv_coords.T).T
         Rt_inv = np.linalg.inv(self.Rt)
         xyz_world = Rt_inv[:3, :] @ xyz_camera
         return xyz_world
-

@@ -7,35 +7,33 @@
 #include <boost/program_options/variables_map.hpp>
 #include <boost/program_options.hpp>
 
-
 namespace po = boost::program_options;
 namespace fs = std::filesystem;
 
-
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   po::options_description desc("Allowed options");
-  desc.add_options()("help", "produce help message")
-      ("in", po::value<std::string>(), "path to kitti dataset folder")("out", po::value<std::string>(), "path to results folder")
-      ("last_frame", po::value<int>()->default_value(200), "last frame of kitty processing") // NOLINT
-      ("first_frame", po::value<int>()->default_value(0), "first frame of kitty processing")
-      ("sequence,s", po::value<std::string>()->default_value("03"), "name of kitti scene 03 for example")
-      ("sfm,a", po::value<std::string>()->default_value("sfm"), "sfm algo [sfm|simple]")
-      ("config,c", po::value<std::string>()->default_value("../../../../cpp/sfm/config/sfm.yaml"), "path to config file")
-      ("verbose,v", po::bool_switch()->default_value(false), "verbose mode");
+  desc.add_options()("help", "produce help message")("in", po::value<std::string>(), "path to kitti dataset folder")(
+      "out", po::value<std::string>(), "path to results folder")("last_frame", po::value<int>()->default_value(200),
+                                                                 "last frame of kitty processing")  // NOLINT
+      ("first_frame", po::value<int>()->default_value(0), "first frame of kitty processing")(
+          "sequence,s", po::value<std::string>()->default_value("03"), "name of kitti scene 03 for example")(
+          "sfm,a", po::value<std::string>()->default_value("sfm"), "sfm algo [sfm|simple]")(
+          "config,c", po::value<std::string>()->default_value("../../../../cpp/sfm/config/sfm.yaml"),
+          "path to config file")("verbose,v", po::bool_switch()->default_value(false), "verbose mode");
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
   po::notify(vm);
 
   if (vm.count("help")) {
-      std::cout << desc << "\n";
-      return 1;
+    std::cout << desc << "\n";
+    return 1;
   }
   SFM::Config config;
 
   config.FEATURES_NUMBER = 2000;
-  config.startFrame = vm["first_frame"].as<int>();//vm["in"].as<std::string>()
+  config.startFrame = vm["first_frame"].as<int>();  // vm["in"].as<std::string>()
   config.endFrame = vm["last_frame"].as<int>();
   config.verbose = vm["verbose"].as<bool>();
 
@@ -57,7 +55,8 @@ int main(int argc, char *argv[])
   config.calibration.intrinsic.width = first.size().width;
   config.calibration.intrinsic.height = first.size().height;
 
-  fs::path gtPath = fs::path(vm["in"].as<std::string>()) / fs::path("poses") / fs::path(vm["sequence"].as<std::string>());
+  fs::path gtPath =
+      fs::path(vm["in"].as<std::string>()) / fs::path("poses") / fs::path(vm["sequence"].as<std::string>());
   gtPath.replace_extension(".txt");
   config.gt = parseGTFile(gtPath.string());
 

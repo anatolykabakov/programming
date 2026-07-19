@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package ai.flow.adas;
+
+option java_outer_classname = "Lanes";
+
+// One lane or road-edge polyline in ego frame (openpilot convention).
+message LanePolyline {
+    repeated float y = 1;  // lateral offset (m), typically 33 samples
+    float prob = 2;        // confidence (lanes); unused for edges
+}
+
+// Supercombo / vision lane output for bag logging.
+message LaneLines {
+    int64 timestamp = 1;
+    int32 frame_id = 2;
+    repeated float x = 3;           // longitudinal sample points (m) for lanes/edges
+    repeated LanePolyline lanes = 4; // 4: leftFar, leftNear, rightNear, rightFar
+    repeated LanePolyline edges = 5; // 2: left, right road edges
+    // Best PLAN hypothesis (primary driving path), ego xyz
+    repeated float plan_x = 6;
+    repeated float plan_y = 7;
+    repeated float plan_z = 8;
+    int32 plan_hyp = 9;             // MHP index 0..4; -1 if absent
+}

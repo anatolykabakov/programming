@@ -3,7 +3,9 @@ Observation parser for MetaDrive environment
 """
 
 import numpy as np
-from metadrive.component.navigation_module.trajectory_navigation import TrajectoryNavigation
+from metadrive.component.navigation_module.trajectory_navigation import (
+    TrajectoryNavigation,
+)
 
 
 class ObservationParser:
@@ -132,20 +134,29 @@ class ObservationParser:
         }
 
     def make_camera_image(self):
-        """Extract camera image with custom position/orientation"""
+        """Extract camera image from ego-mounted RGB sensor."""
         try:
+            from metadrive.constants import DEFAULT_SENSOR_OFFSET
+
             rgb_sensor = self.env.engine.get_sensor("rgb")
-            if rgb_sensor is not None:
-                img = rgb_sensor.perceive(
-                    to_float=True,
-                    # new_parent_node=self.env.agent.origin,
-                    # position=self.camera_extrinsics["position"],
-                    # hpr=self.camera_extrinsics["hpr"],
-                )
-                if img is not None:
-                    return img
-        except Exception as e:
+            if rgb_sensor is None:
+                return None
+            # Explicit mount: same pose CameraParams / overlay use
+            hpr = getattr(self, "_cam_hpr", None) or (0.0, 0.59681, 0.0)
+            offset = getattr(self, "_cam_offset", None) or tuple(DEFAULT_SENSOR_OFFSET)
+            img = rgb_sensor.perceive(
+                to_float=True,
+                new_parent_node=self.env.agent.origin,
+                position=list(offset),
+                hpr=list(hpr),
+            )
+            return img
+        except Exception:
             return None
+
+    def set_camera_mount(self, offset, hpr) -> None:
+        self._cam_offset = tuple(float(x) for x in offset)
+        self._cam_hpr = tuple(float(x) for x in hpr)
 
     def make_perception_data(self):
         """Get all observation data: odometry, lane polygons, and camera image"""

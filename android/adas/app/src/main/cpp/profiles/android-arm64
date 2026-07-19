@@ -1,0 +1,16 @@
+# Host profile: Android arm64-v8a (NDK via ANDROID_NDK_ROOT / ANDROID_NDK_HOME)
+[settings]
+os=Android
+os.api_level=26
+arch=armv8
+compiler=clang
+compiler.version=19
+compiler.libcxx=c++_shared
+compiler.cppstd=17
+build_type=Release
+
+[conf]
+tools.android:ndk_path={{ os.getenv("ANDROID_NDK_ROOT") or os.getenv("ANDROID_NDK_HOME") }}
+
+[tool_requires]
+*: cmake/[>=3 <4]
