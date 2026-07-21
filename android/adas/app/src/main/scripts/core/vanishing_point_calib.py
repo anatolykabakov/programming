@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Dynamic camera pitch/yaw calibration from vanishing point (AAD).
+"""VP camera calib — C++ ``CameraCalibService`` + Python Hough/image helpers.
 
-Port of Algorithms-for-Automated-Driving
-  ``code/solutions/camera_calibration/calibrated_lane_detector.py``:
+Host (sim / bag) only: extract image-space lane lines (Hough or projected GT),
+sample to UV, feed C++ ``CameraCalibService`` / ``VanishingPointCalibrator``.
 
-  - Fit left/right lane lines in the image: ``v = m*u + c``
-  - Vanishing point = line intersection
-  - ``pitch, yaw = get_py_from_vp(u_i, v_i, K)``  (roll assumed 0)
-
-Does **not** estimate height or roll (same limitations as AAD / openpilot).
+Math (pitch/yaw from vanishing point) lives in C++.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -31,20 +27,6 @@ def get_intersection(line1: Line2, line2: Line2) -> Optional[Tuple[float, float]
     u_i = (c2 - c1) / (m1 - m2)
     v_i = m1 * u_i + c1
     return float(u_i), float(v_i)
-
-
-def get_py_from_vp(u_i: float, v_i: float, K: np.ndarray) -> Tuple[float, float]:
-    """AAD ``get_py_from_vp``: pitch, yaw (radians) from vanishing point + K.
-
-    Assumes roll = 0. Pitch sign matches AAD CameraGeometry (negative = looking down).
-    """
-    p_infinity = np.array([u_i, v_i, 1.0], dtype=np.float64)
-    K_inv = np.linalg.inv(np.asarray(K, dtype=np.float64))
-    r3 = K_inv @ p_infinity
-    r3 /= np.linalg.norm(r3)
-    yaw = -np.arctan2(r3[0], r3[2])
-    pitch = np.arcsin(np.clip(r3[1], -1.0, 1.0))
-    return float(pitch), float(yaw)
 
 
 def fit_line_v_of_u(
@@ -179,61 +161,98 @@ def lines_from_projected_lanes(
     return _fit(uv_left), _fit(uv_right)
 
 
+def _sample_line_uv(line: Line2, w: int, h: int, n: int = 24) -> List[Tuple[float, float]]:
+    """Sample v=m*u+c in the lower ~55% of the frame (road region)."""
+    m, c = line
+    v_lo = 0.45 * float(h)
+    # u such that v = m*u+c ∈ [v_lo, h-1]
+    us = np.linspace(0.0, float(max(w - 1, 1)), n * 2)
+    pts: List[Tuple[float, float]] = []
+    for u in us:
+        v = m * u + c
+        if v_lo <= v <= float(h - 1):
+            pts.append((float(u), float(v)))
+    if len(pts) >= 8:
+        return pts[:: max(1, len(pts) // n)][:n]
+    # Fallback: full-width sample
+    us = np.linspace(0.0, float(max(w - 1, 1)), n)
+    return [(float(u), float(m * u + c)) for u in us]
+
+
 @dataclass
 class VanishingPointCalibrator:
-    """Online AAD calibrator: accumulate pitch/yaw from VP, then take the mean."""
+    """Online AAD calibrator — C++ ``CameraCalibService`` (host sim/bag)."""
 
     history_len: int = 50
     mean_residuals_thresh: float = 25.0
     estimated_pitch_deg: float = -5.0
     estimated_yaw_deg: float = 0.0
+    camera_height_m: float = 1.40
     calibration_success: bool = False
     pitch_yaw_history: List[List[float]] = field(default_factory=list)
     last_vp: Optional[Tuple[float, float]] = None
     n_updates: int = 0
+    _svc: Any = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        from .native import require_cpp
+
+        cpp = require_cpp()
+        object.__setattr__(
+            self,
+            "_svc",
+            cpp.CameraCalibService(
+                float(self.estimated_pitch_deg),
+                float(self.estimated_yaw_deg),
+                float(self.camera_height_m),
+                930.0,
+                930.0,
+                640.0,
+                360.0,
+                int(self.history_len),
+            ),
+        )
+
+    @property
+    def history_pending(self) -> int:
+        """Samples buffered toward next C++ commit."""
+        if self._svc is None:
+            return 0
+        try:
+            return int(self._svc.history_pending)
+        except Exception:
+            return len(self.pitch_yaw_history)
 
     def reset(self) -> None:
         self.pitch_yaw_history.clear()
         self.calibration_success = False
         self.last_vp = None
         self.n_updates = 0
+        if self._svc is not None:
+            self._svc.reset()
+            self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
 
     def update_from_lines(self, line_left: Line2, line_right: Line2, K: np.ndarray) -> bool:
-        """One frame update. Returns True when a new mean estimate was committed."""
-        vp = get_intersection(line_left, line_right)
-        if vp is None:
-            return False
-        u_i, v_i = vp
-        cx, cy = float(K[0, 2]), float(K[1, 2])
-        fx, fy = float(K[0, 0]), float(K[1, 1])
-        # Reject VP far outside a generous image box
-        if not (-0.5 * cx <= u_i <= 2.5 * cx and -0.5 * cy <= v_i <= 2.5 * cy):
-            return False
-        pitch, yaw = get_py_from_vp(u_i, v_i, K)
-        # Reject physically implausible windshield poses / Hough junk
-        if abs(np.rad2deg(pitch)) > 25.0 or abs(np.rad2deg(yaw)) > 15.0:
-            return False
-        # Looking-down camera: road VP is at/above principal point (v <= cy).
-        # Hough clutter often intersects below cy → false +pitch and lifts overlay.
-        if v_i > cy + 0.05 * max(fy, 1.0):
-            return False
-        if abs(v_i - cy) > 0.45 * max(fy, 1.0):
-            return False
-        self.last_vp = (u_i, v_i)
-        return self.add_to_pitch_yaw_history(pitch, yaw)
-
-    def add_to_pitch_yaw_history(self, pitch: float, yaw: float) -> bool:
-        """AAD ``add_to_pitch_yaw_history``."""
-        self.pitch_yaw_history.append([pitch, yaw])
-        if len(self.pitch_yaw_history) <= self.history_len:
-            return False
-        py = np.asarray(self.pitch_yaw_history, dtype=np.float64)
-        self.estimated_pitch_deg = float(np.rad2deg(np.mean(py[:, 0])))
-        self.estimated_yaw_deg = float(np.rad2deg(np.mean(py[:, 1])))
-        self.calibration_success = True
-        self.n_updates += 1
-        self.pitch_yaw_history = []
-        return True
+        """Sample v=m*u+c into UV polylines and feed C++ calibrator."""
+        K = np.asarray(K, dtype=np.float64)
+        fx, fy, cx, cy = float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])
+        self._svc.set_intrinsics(fx, fy, cx, cy)
+        w = max(int(round(cx * 2)), 2)
+        h = max(int(round(cy * 2)), 2)
+        left = _sample_line_uv(line_left, w, h)
+        right = _sample_line_uv(line_right, w, h)
+        committed = bool(self._svc.update_from_uv(left, right, 0))
+        last = self._svc.last
+        self.estimated_pitch_deg = float(last.pitch_deg)
+        self.estimated_yaw_deg = float(last.yaw_deg)
+        self.calibration_success = bool(last.calibration_success)
+        self.n_updates = int(last.n_updates)
+        if last.has_vp:
+            self.last_vp = (float(last.vp_u), float(last.vp_v))
+        # Mirror pending count for older UI that reads pitch_yaw_history length.
+        pending = self.history_pending
+        self.pitch_yaw_history = [[0.0, 0.0]] * pending
+        return committed
 
     def update_from_image(self, bgr: np.ndarray, K: np.ndarray) -> bool:
         line_l, line_r, _ = lines_from_image_hough(bgr)
@@ -248,9 +267,10 @@ class VanishingPointCalibrator:
             "yaw_deg": self.estimated_yaw_deg,
             "calibration_success": self.calibration_success,
             "n_updates": self.n_updates,
+            "history_pending": self.history_pending,
             "last_vp": list(self.last_vp) if self.last_vp else None,
-            "method": "AAD vanishing point (get_py_from_vp)",
-            "note": "roll=0 and height not estimated (same as AAD)",
+            "method": "AAD vanishing point (C++ CameraCalibService)",
+            "note": "host sim/bag: Hough or GT→UV; roll=0 height prior",
         }
 
 

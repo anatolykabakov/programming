@@ -5,14 +5,25 @@ add_library(
   adas_app_common
   STATIC
   adas_app.cpp
-  services/sensor_reader_service.cpp
   services/zmq_bridge_service.cpp
   services/panda_service.cpp
+  services/lane_keep_service.cpp
+  services/localization_service.cpp
+  services/camera_calib_service.cpp
+  services/topic_convert_service.cpp
+  services/imu_calib_service.cpp
   volkswagen/mqbcan.cpp
   volkswagen/carcontroller.cpp
-  utils/file_logger.cpp
   utils/protobuf_utils.cpp
   utils/can_parser.cc
+  utils/pure_pursuit.cpp
+  utils/vehicle_ekf.cpp
+  utils/online_localizer.cpp
+  utils/vanishing_point_calib.cpp
+  utils/pose_calibrator.cpp
+  utils/topic_convert.cpp
+  utils/imu_calibrator.cpp
+  utils/adas_config.cpp
 )
 target_link_libraries(
   adas_app_common
@@ -63,4 +74,11 @@ else()
       pthread
       rt
   )
+endif()
+
+option(BUILD_PYTHON_BINDINGS "Build pyadas pybind11 module for sim/vis" OFF)
+if(BUILD_PYTHON_BINDINGS
+   AND NOT BUILD_FOR_ANDROID
+)
+  add_subdirectory(python)
 endif()

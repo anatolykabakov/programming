@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package ai.flow.adas;
+
+option java_outer_classname = "LaneKeepOuter";
+
+// Pure Pursuit / lane-keep algorithm output for bag + PlotJuggler.
+message LaneKeepState {
+  int64 timestamp = 1;
+  double steer_rad = 2;
+  double steer_norm = 3;
+  double throttle = 4;
+  double brake = 5;
+  double lookahead_m = 6;
+  double target_x = 7;
+  double target_y = 8;
+  bool has_target = 9;
+  double curvature = 10;
+  string status = 11;
+}

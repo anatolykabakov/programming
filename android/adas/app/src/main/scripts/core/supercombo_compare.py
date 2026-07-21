@@ -126,11 +126,15 @@ def draw_bag_lanes(
     geom: CameraGeometry,
     w: int,
     h: int,
-    y_sign: float = -1.0,
+    y_sign: float = 1.0,
     min_lane_prob: float = 0.3,
     draw_edges: bool = True,
+    draw_plan: bool = True,
 ) -> None:
-    """Draw lane lines from bag ``vision/lanes`` (Android runtime ONNX output)."""
+    """Draw lane lines from bag ``vision/lanes``.
+
+    Android stores ISO Y-left (already negated), so default ``y_sign=1``.
+    """
     xs = np.asarray(list(lane_msg.x), dtype=np.float64) if lane_msg.x else X_IDXS.copy()
     for lane in lane_msg.lanes:
         if float(lane.prob) < min_lane_prob:
@@ -148,6 +152,13 @@ def draw_bag_lanes(
                 continue
             pts = project_iso_xyz(xs, y, np.zeros_like(y), geom, w, h, y_sign=y_sign)
             draw_pts(img, pts, (0, 0, 255), 2)
+
+    if draw_plan and getattr(lane_msg, "plan_x", None) and getattr(lane_msg, "plan_y", None):
+        px = np.asarray(list(lane_msg.plan_x), dtype=np.float64)
+        py = np.asarray(list(lane_msg.plan_y), dtype=np.float64)
+        if px.size >= 2 and px.size == py.size:
+            pts = project_iso_xyz(px, py, np.zeros_like(py), geom, w, h, x_min=0.5, y_sign=y_sign)
+            draw_pts(img, pts, (0, 255, 0), 3)
 
 
 def supercombo_lanes_to_ego(
@@ -195,6 +206,8 @@ def draw_supercombo_overlay(
     min_lane_prob: float = 0.3,
     draw_plan: bool = True,
     draw_edges: bool = True,
+    draw_lanes: bool = True,
+    lane_tag: str = "runtime",
 ) -> None:
     """Draw plan (green), lanes (yellow), road edges (red) — same as visualizer."""
     if draw_edges:
@@ -210,7 +223,8 @@ def draw_supercombo_overlay(
             )
             draw_pts(img, pts, (0, 0, 255), 2)
 
-    draw_runtime_lanes(img, out, geom, w, h, y_sign=y_sign, min_lane_prob=min_lane_prob)
+    if draw_lanes:
+        draw_runtime_lanes(img, out, geom, w, h, y_sign=y_sign, min_lane_prob=min_lane_prob)
 
     if draw_plan:
         pts = project_iso_xyz(
@@ -228,7 +242,7 @@ def draw_supercombo_overlay(
     probs = [f"{lane.prob:.2f}" for lane in out.lanes]
     cv2.putText(
         img,
-        f"supercombo plan#{out.plan.hyp_index}  lanes p={probs}",
+        f"supercombo plan#{out.plan.hyp_index}  lanes={lane_tag}  p={probs}",
         (8, 20),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.4,

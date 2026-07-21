@@ -198,8 +198,18 @@ public class Logger {
      */
     public void logZMQMessage(Messages.ZMQMessage message) {
         Log.d(TAG, "Logger.logZMQMessage called, running: " + running.get() + ", bagLogger: " + (bagLogger != null) + ", message: " + (message != null ? message.getTopic() : "null"));
-        if (!running.get() || bagLogger == null || message == null) {
-            Log.d(TAG, "Skipping logZMQMessage - running: " + running.get() + ", bagLogger: " + (bagLogger != null) + ", message: " + (message != null));
+        if (message == null) {
+            return;
+        }
+
+        // Forward sensors/commands to native over the single IN endpoint.
+        ZMQBridgeService bridge = ZMQBridgeService.getInstance();
+        if (bridge != null && bridge.isRunning()) {
+            bridge.publishInternalMessage(message.getTopic(), message);
+        }
+
+        if (!running.get() || bagLogger == null) {
+            Log.d(TAG, "Skipping bag write - running: " + running.get() + ", bagLogger: " + (bagLogger != null));
             return;
         }
 

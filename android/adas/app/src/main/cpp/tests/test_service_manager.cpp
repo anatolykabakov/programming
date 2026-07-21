@@ -11,7 +11,6 @@
 #include "framework/service_manager.hpp"
 #include "messages.pb.h"
 #include "services/zmq_bridge_service.h"
-#include "services/sensor_reader_service.h"
 
 struct TestMessage {
   int value;
@@ -629,7 +628,7 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
       imu->set_mag_z(35.0f);
       imu->set_timestamp(123456789);
 
-      // Publish to internal topic (simulating SensorReaderService behavior)
+      // Publish to internal topic (same path ZmqBridge uses)
       publish("sensors/imu", msg);
       LOGI("MockSensorPublisher: published IMU data to sensors/imu");
     }
@@ -762,7 +761,7 @@ TEST(ServiceManagerTest, InternalTopicPublishing)
   LOGI("Test: InternalTopicPublishing - PASSED");
 }
 
-// Test 10: Full integration - External ZMQ -> ZmqBridge -> SensorReader -> Internal Topics -> Consumer
+// Test 10: Full integration - External ZMQ -> ZmqBridge -> Internal Topics -> Consumer
 TEST(ServiceManagerTest, FullZmqIntegration)
 {
   LOGI("Test: FullZmqIntegration - START");
@@ -853,10 +852,9 @@ TEST(ServiceManagerTest, FullZmqIntegration)
   };
 
   auto zmq_bridge = std::make_shared<ZmqBridgeService>(test_topics);
-  auto sensor_reader = std::make_shared<SensorReaderService>();
   auto consumer = std::make_shared<SensorDataConsumer>();
 
-  std::vector<microros::ServicePtr> services = {zmq_bridge, sensor_reader, consumer};
+  std::vector<microros::ServicePtr> services = {zmq_bridge, consumer};
 
   auto manager = std::make_shared<microros::ServiceManager>(microros::ServiceManager::Mode::RealTime, services,
                                                             microros::ServiceManager::ThreadingMode::ThreadPool, 3);
@@ -924,8 +922,7 @@ TEST(ServiceManagerTest, FullZmqIntegration)
     LOGI("Sent GPS location message via external ZMQ");
   }
 
-  // Give time for messages to flow through the entire chain:
-  // External ZMQ -> ZmqBridge -> Internal Topic -> SensorReader -> Internal sensors/* -> Consumer
+  // Give time for messages to flow: External ZMQ -> ZmqBridge -> Internal topics -> Consumer
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
   // Verify all messages were received by consumer

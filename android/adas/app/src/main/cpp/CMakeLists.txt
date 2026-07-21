@@ -7,6 +7,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(BUILD_FOR_ANDROID "Build Android shared library" ON)
 option(BUILD_TESTING "Build unit tests" OFF)
+option(BUILD_PYTHON_BINDINGS "Build pyadas pybind11 module (desktop)" OFF)
 
 find_package(Protobuf REQUIRED)
 find_package(cppzmq REQUIRED)

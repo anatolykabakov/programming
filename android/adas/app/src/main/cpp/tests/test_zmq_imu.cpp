@@ -34,18 +34,18 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   // Create ZMQ context for test
   zmq::context_t context(1);
 
-  // Create IMU publisher to send data to AdasApp (port 5558)
+  // Create IMU publisher → AdasApp inbound (native binds SUB @ 5555)
   zmq::socket_t imu_publisher(context, ZMQ_PUB);
-  imu_publisher.bind("tcp://127.0.0.1:5558");
-  LOGI("Test IMU publisher bound to tcp://127.0.0.1:5558");
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));  // Give time to bind
+  imu_publisher.connect("tcp://127.0.0.1:5555");
+  LOGI("Test IMU publisher connected to tcp://127.0.0.1:5555");
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  // Create subscriber to connect to AdasApp's publisher (port 5564)
+  // Subscriber ← AdasApp outbound (native binds PUB @ 5556)
   zmq::socket_t subscriber(context, ZMQ_SUB);
-  subscriber.connect("tcp://127.0.0.1:5564");
+  subscriber.connect("tcp://127.0.0.1:5556");
   subscriber.set(zmq::sockopt::subscribe, "");
-  subscriber.set(zmq::sockopt::rcvtimeo, 1000);  // Increase timeout
-  LOGI("Test subscriber connected to tcp://127.0.0.1:5564");
+  subscriber.set(zmq::sockopt::rcvtimeo, 1000);
+  LOGI("Test subscriber connected to tcp://127.0.0.1:5556");
 
   // Give time to connect
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -75,8 +75,12 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   std::string serialized_data;
   zmq_msg.SerializeToString(&serialized_data);
 
-  // Send protobuf message
-  imu_publisher.send(zmq::buffer(serialized_data), zmq::send_flags::none);
+  // Multipart [topic][payload] on shared IN socket
+  const std::string topic = "sensors/imu";
+  zmq::message_t topic_frame(topic.data(), topic.size());
+  zmq::message_t payload_frame(serialized_data.data(), serialized_data.size());
+  imu_publisher.send(topic_frame, zmq::send_flags::sndmore);
+  imu_publisher.send(payload_frame, zmq::send_flags::none);
   LOGI("Sent protobuf IMU message to AdasApp: accel(%.1f, %.1f, %.1f), gyro(%.1f, %.1f, %.1f)", imu_data->accel_x(),
        imu_data->accel_y(), imu_data->accel_z(), imu_data->gyro_x(), imu_data->gyro_y(), imu_data->gyro_z());
 

@@ -92,7 +92,13 @@ public class ProtoUtils {
                message.hasPandaHealth() ||
                message.hasCameraIntrinsics() ||
                message.hasLaneLines() ||
-               message.hasCarState();
+               message.hasCarState() ||
+               message.hasSteerCommand() ||
+               message.hasLaneKeep() ||
+               message.hasLocalizationPose() ||
+               message.hasCameraCalib() ||
+               message.hasLaneUv() ||
+               message.hasCameraOdometry();
     }
 
     /**
@@ -344,5 +350,88 @@ public class ProtoUtils {
             .setTopic("vision/lanes")
             .setLaneLines(lanesBuilder.build())
             .build();
+    }
+
+    /** Image-space UV samples for VP camera calib ({@code calibration/lane_uv}). */
+    public static Messages.ZMQMessage createLaneUvMessage(
+            long timestampMs, float[] leftU, float[] leftV, float[] rightU, float[] rightV) {
+        if (leftU == null || leftV == null || rightU == null || rightV == null) {
+            return null;
+        }
+        int nl = Math.min(leftU.length, leftV.length);
+        int nr = Math.min(rightU.length, rightV.length);
+        if (nl < 2 || nr < 2) {
+            return null;
+        }
+        CameraCalibOuter.LaneUv.Builder uv = CameraCalibOuter.LaneUv.newBuilder()
+                .setTimestamp(timestampMs);
+        for (int i = 0; i < nl; i++) {
+            if (!Float.isFinite(leftU[i]) || !Float.isFinite(leftV[i])) {
+                continue;
+            }
+            uv.addLeftUv(CameraCalibOuter.LaneUvPoint.newBuilder()
+                    .setU(leftU[i]).setV(leftV[i]).build());
+        }
+        for (int i = 0; i < nr; i++) {
+            if (!Float.isFinite(rightU[i]) || !Float.isFinite(rightV[i])) {
+                continue;
+            }
+            uv.addRightUv(CameraCalibOuter.LaneUvPoint.newBuilder()
+                    .setU(rightU[i]).setV(rightV[i]).build());
+        }
+        if (uv.getLeftUvCount() < 2 || uv.getRightUvCount() < 2) {
+            return null;
+        }
+        return Messages.ZMQMessage.newBuilder()
+                .setTimestamp(timestampMs)
+                .setTopic("calibration/lane_uv")
+                .setLaneUv(uv.build())
+                .build();
+    }
+
+    /** Live calib (flowpilot-style) → {@code calibration/camera}. */
+    public static Messages.ZMQMessage createCameraCalibMessage(
+            long timestampMs,
+            float rollDeg, float pitchDeg, float yawDeg, float heightM,
+            boolean success, int validBlocks, int calPercent) {
+        CameraCalibOuter.CameraCalibrationState.Builder c =
+                CameraCalibOuter.CameraCalibrationState.newBuilder()
+                        .setTimestamp(timestampMs)
+                        .setRollDeg(rollDeg)
+                        .setPitchDeg(pitchDeg)
+                        .setYawDeg(yawDeg)
+                        .setCameraHeightM(heightM)
+                        .setCalibrationSuccess(success)
+                        .setNUpdates(validBlocks)
+                        .setCalPercent(calPercent)
+                        .setHasVp(false);
+        return Messages.ZMQMessage.newBuilder()
+                .setTimestamp(timestampMs)
+                .setTopic("calibration/camera")
+                .setCameraCalib(c.build())
+                .build();
+    }
+
+    /** Model pose → {@code model/camera_odometry} for C++ PoseCalibrator. */
+    public static Messages.ZMQMessage createCameraOdometryMessage(
+            long timestampMs, int frameId, ai.flow.adas.vision.CameraOdometry pose) {
+        if (pose == null || !pose.valid) {
+            return null;
+        }
+        CameraCalibOuter.CameraOdometry.Builder o =
+                CameraCalibOuter.CameraOdometry.newBuilder()
+                        .setTimestamp(timestampMs)
+                        .setFrameId(frameId);
+        for (int i = 0; i < 3; i++) {
+            o.addTrans(pose.trans[i]);
+            o.addRot(pose.rot[i]);
+            o.addTransStd(pose.transStd[i]);
+            o.addRotStd(pose.rotStd[i]);
+        }
+        return Messages.ZMQMessage.newBuilder()
+                .setTimestamp(timestampMs)
+                .setTopic("model/camera_odometry")
+                .setCameraOdometry(o.build())
+                .build();
     }
 }

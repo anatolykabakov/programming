@@ -38,12 +38,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Model
 
-Load order: `/sdcard/adas_models/supercombo.onnx` → app filesDir cache → assets.
+Bundled at **`assets/supercombo.onnx`** (no `models/` dir). Asset name comes from
+`assets/config.json` → `supercombo_asset`.
+
+Load order: `/sdcard/adas_models/<name>` → app filesDir cache → assets root.
 
 ```bash
 adb shell mkdir -p /sdcard/adas_models
 adb push openpilot-supercombo-model/supercombo.onnx /sdcard/adas_models/supercombo.onnx
 ```
+
+Node feature flags + camera extrinsic priors: `assets/config.json` (see `AdasConfig`).
 
 ## Notes
 

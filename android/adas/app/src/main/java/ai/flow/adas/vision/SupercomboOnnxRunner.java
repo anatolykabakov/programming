@@ -11,6 +11,7 @@ import java.nio.FloatBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
+import ai.flow.adas.AdasConfig;
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtLoggingLevel;
@@ -65,6 +66,16 @@ public class SupercomboOnnxRunner {
         void onError(String msg);
     }
 
+    public static final class Result {
+        public final LaneLines lanes;
+        public final CameraOdometry pose;
+
+        public Result(LaneLines lanes, CameraOdometry pose) {
+            this.lanes = lanes;
+            this.pose = pose;
+        }
+    }
+
     public SupercomboOnnxRunner(Context context) throws Exception {
         env = OrtEnvironment.getEnvironment();
         File model = resolveModelFile(context);
@@ -89,15 +100,28 @@ public class SupercomboOnnxRunner {
     }
 
     private static File resolveModelFile(Context context) throws Exception {
-        File external = new File("/sdcard/adas_models/supercombo.onnx");
+        String assetName = "supercombo.onnx";
+        try {
+            assetName = AdasConfig.load(context).supercomboAsset;
+        } catch (Throwable ignored) {
+        }
+        File external = new File("/sdcard/adas_models/" + assetName);
         if (external.exists() && external.length() > 1_000_000) {
             return external;
         }
-        File cached = new File(context.getFilesDir(), "supercombo.onnx");
-        if (cached.exists() && cached.length() > 1_000_000) {
+        File cached = new File(context.getFilesDir(), assetName);
+        // Prefer fresh asset over stale cache (e.g. after model swap/rollback).
+        long assetLen = -1;
+        try (InputStream in = context.getAssets().open(assetName)) {
+            assetLen = in.available();
+        } catch (Exception ignored) {
+        }
+        boolean needCopy = !cached.exists() || cached.length() < 1_000_000
+                || (assetLen > 1_000_000 && Math.abs(cached.length() - assetLen) > 1024);
+        if (!needCopy) {
             return cached;
         }
-        try (InputStream in = context.getAssets().open("models/supercombo.onnx");
+        try (InputStream in = context.getAssets().open(assetName);
              FileOutputStream out = new FileOutputStream(cached)) {
             byte[] buf = new byte[1 << 20];
             int n;
@@ -107,7 +131,7 @@ public class SupercomboOnnxRunner {
             return cached;
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "supercombo.onnx not found. Push with:\n" +
+                    assetName + " not found. Push with:\n" +
                     "  adb shell mkdir -p /sdcard/adas_models\n" +
                     "  adb push openpilot-supercombo-model/supercombo.onnx /sdcard/adas_models/supercombo.onnx",
                     e);
@@ -115,7 +139,7 @@ public class SupercomboOnnxRunner {
     }
 
     /** Run on a background thread. Accepts ARGB Bitmap (camera preview size). */
-    public synchronized LaneLines run(Bitmap frame, int frameId) throws Exception {
+    public synchronized Result run(Bitmap frame, int frameId) throws Exception {
         Bitmap resized = Bitmap.createScaledBitmap(frame, MODEL_W, MODEL_H, true);
         try {
             resized.getPixels(resizePixels, 0, MODEL_W, 0, 0, MODEL_W, MODEL_H);
@@ -152,12 +176,17 @@ public class SupercomboOnnxRunner {
                     LaneLines lanes = parseLanes(flat);
                     lanes.frameId = frameId;
                     lanes.timestampMs = ai.flow.adas.TimeUtil.nowMs();
+                    CameraOdometry pose = CameraOdometry.parse(flat);
 
                     // Feed recurrent state from tail of output if present
-                    if (flat.length >= ROAD_END + 512) {
+                    if (flat.length >= CameraOdometry.POSE_IDX + CameraOdometry.POSE_SIZE
+                            + CameraOdometry.TEMPORAL_SIZE) {
+                        System.arraycopy(flat, flat.length - CameraOdometry.TEMPORAL_SIZE,
+                                rnnState, 0, CameraOdometry.TEMPORAL_SIZE);
+                    } else if (flat.length >= ROAD_END + 512) {
                         System.arraycopy(flat, flat.length - 512, rnnState, 0, 512);
                     }
-                    return lanes;
+                    return new Result(lanes, pose);
                 }
             }
         } finally {

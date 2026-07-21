@@ -1,11 +1,11 @@
 #include "services/zmq_bridge_service.h"
-#include "utils/logger.h"
-#include "panda/health.h"
-#include "panda/can.h"
-#include "utils/protobuf_utils.h"
-#include <thread>
 
-ZmqBridgeService::ZmqBridgeService(const std::map<std::string, std::string>& sub_topics) : sub_topics_(sub_topics) {}
+#include "utils/logger.h"
+
+ZmqBridgeService::ZmqBridgeService(std::string endpoint_in, std::string endpoint_out)
+  : endpoint_in_(std::move(endpoint_in)), endpoint_out_(std::move(endpoint_out))
+{
+}
 
 void ZmqBridgeService::configure()
 {
@@ -13,16 +13,10 @@ void ZmqBridgeService::configure()
 
   try {
     zmq_context_ = std::make_unique<zmq::context_t>(1);
-
-    initSubscribers();
-    initPublishers();
-
-    if (!topic_subscribers_.empty()) {
-      scheduleTimer(10000, [this]() { zmqPollTimerCallback(); });
-    }
-
-    LOGI("ZMQ services initialized: %zu subscribers, %zu publishers", topic_subscribers_.size(),
-         topic_publishers_.size());
+    initSockets();
+    scheduleTimer(10000, [this]() { zmqPollTimerCallback(); });
+    LOGI("ZMQ bridge ready: SUB bind %s | PUB bind %s (%zu outbound topics)", endpoint_in_.c_str(),
+         endpoint_out_.c_str(), kZmqOutboundTopics.size());
   } catch (const std::exception& e) {
     LOGE("Exception in ZmqBridgeService::configure(): %s", e.what());
     throw;
@@ -31,112 +25,103 @@ void ZmqBridgeService::configure()
 
 void ZmqBridgeService::reset() {}
 
-void ZmqBridgeService::zmqPollTimerCallback()
+void ZmqBridgeService::initSockets()
 {
-  auto poll_result = zmq::poll(poll_items_.data(), poll_items_.size(), std::chrono::milliseconds(1));
+  sub_in_ = std::make_unique<zmq::socket_t>(*zmq_context_, ZMQ_SUB);
+  sub_in_->bind(endpoint_in_);
+  sub_in_->set(zmq::sockopt::subscribe, "");
+  sub_in_->set(zmq::sockopt::rcvtimeo, 0);
+  poll_items_.clear();
+  poll_items_.push_back(zmq::pollitem_t{*sub_in_, 0, ZMQ_POLLIN, 0});
+  LOGI("✓ ZMQ SUB bound %s (inbound)", endpoint_in_.c_str());
 
-  if (poll_result > 0) {
-    for (size_t i = 0; i < poll_items_.size(); i++) {
-      if (poll_items_[i].revents & ZMQ_POLLIN) {
-        const std::string& topic_name = topic_names_[i];
-        const std::unique_ptr<zmq::socket_t>& current_socket = topic_subscribers_[topic_name];
-        if (current_socket) {
-          processExternalMessage(topic_name, current_socket);
-        }
-      }
-    }
+  pub_out_ = std::make_unique<zmq::socket_t>(*zmq_context_, ZMQ_PUB);
+  pub_out_->bind(endpoint_out_);
+  LOGI("✓ ZMQ PUB bound %s (outbound)", endpoint_out_.c_str());
+
+  for (const auto& topic_name : kZmqOutboundTopics) {
+    subscribe<ai::flow::adas::ZMQMessage>(
+        topic_name, [this, topic_name](const ai::flow::adas::ZMQMessage& msg) { onInternalMessage(topic_name, msg); });
   }
 }
 
-void ZmqBridgeService::processExternalMessage(const std::string& topic_name,
-                                              const std::unique_ptr<zmq::socket_t>& socket)
+void ZmqBridgeService::zmqPollTimerCallback()
 {
-  zmq::message_t recv_msg;
-  auto result = socket->recv(recv_msg);
-
-  if (!result) {
-    LOGD("No message received from %s", topic_name.c_str());
+  if (poll_items_.empty())
     return;
+  const auto n = zmq::poll(poll_items_.data(), poll_items_.size(), std::chrono::milliseconds(1));
+  if (n > 0 && (poll_items_[0].revents & ZMQ_POLLIN)) {
+    processInbound();
+  }
+}
+
+void ZmqBridgeService::processInbound()
+{
+  // Multipart: [topic][payload]. Also accept single-frame protobuf (topic from message).
+  zmq::message_t frame0;
+  auto r0 = sub_in_->recv(frame0, zmq::recv_flags::dontwait);
+  if (!r0)
+    return;
+
+  std::string topic;
+  std::string payload;
+
+  if (frame0.more()) {
+    topic.assign(static_cast<const char*>(frame0.data()), frame0.size());
+    zmq::message_t frame1;
+    auto r1 = sub_in_->recv(frame1, zmq::recv_flags::dontwait);
+    if (!r1) {
+      LOGE("Inbound multipart missing payload for topic '%s'", topic.c_str());
+      return;
+    }
+    payload.assign(static_cast<const char*>(frame1.data()), frame1.size());
+  } else {
+    payload.assign(static_cast<const char*>(frame0.data()), frame0.size());
   }
 
-  LOGI("✓✓✓ Received external ZMQ message for topic '%s', size: %zu bytes", topic_name.c_str(), recv_msg.size());
-
-  // Parse the protobuf message
   ai::flow::adas::ZMQMessage message;
-  if (!message.ParseFromArray(recv_msg.data(), recv_msg.size())) {
-    LOGE("Failed to deserialize %s message from external ZMQ", topic_name.c_str());
+  if (!message.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
+    LOGE("Failed to deserialize inbound ZMQ payload (%zu bytes)", payload.size());
     return;
   }
 
-  publish(topic_name, message);
+  if (topic.empty()) {
+    topic = message.topic();
+  } else if (message.topic().empty()) {
+    message.set_topic(topic);
+  }
+
+  if (topic.empty()) {
+    LOGE("Inbound ZMQ message has empty topic");
+    return;
+  }
+
+  LOGD("ZMQ inbound '%s' (%zu bytes)", topic.c_str(), payload.size());
+  publish(topic, message);
 }
 
 void ZmqBridgeService::onInternalMessage(const std::string& topic_name, const ai::flow::adas::ZMQMessage& msg)
 {
-  LOGI("✓✓✓ Received internal message for topic '%s'", topic_name.c_str());
+  if (!pub_out_)
+    return;
 
-  auto publisher_it = topic_publishers_.find(topic_name);
-  if (publisher_it == topic_publishers_.end()) {
-    LOGE("No ZMQ publisher found for topic '%s'", topic_name.c_str());
+  ai::flow::adas::ZMQMessage out = msg;
+  if (out.topic().empty()) {
+    out.set_topic(topic_name);
+  }
+
+  std::string serialized;
+  if (!out.SerializeToString(&serialized)) {
+    LOGE("Failed to serialize outbound '%s'", topic_name.c_str());
     return;
   }
 
-  std::string serialized_data;
-  if (!msg.SerializeToString(&serialized_data)) {
-    LOGE("Failed to serialize message for topic '%s'", topic_name.c_str());
-    return;
-  }
+  zmq::message_t topic_frame(topic_name.data(), topic_name.size());
+  zmq::message_t payload_frame(serialized.data(), serialized.size());
+  const bool ok = pub_out_->send(topic_frame, zmq::send_flags::sndmore | zmq::send_flags::dontwait) &&
+                  pub_out_->send(payload_frame, zmq::send_flags::dontwait);
 
-  zmq::message_t zmq_msg(serialized_data.data(), serialized_data.size());
-  auto result = publisher_it->second->send(zmq_msg, zmq::send_flags::dontwait);
-
-  if (result) {
-    LOGI("✓✓✓ Sent internal message to external ZMQ for topic '%s' SUCCESS", topic_name.c_str());
-  } else {
-    LOGE("Failed to send message to external ZMQ for topic '%s'", topic_name.c_str());
-  }
-}
-
-void ZmqBridgeService::initSubscribers()
-{
-  for (const auto& [topic_name, endpoint] : sub_topics_) {
-    try {
-      std::unique_ptr<zmq::socket_t> subscriber;
-      subscriber = std::make_unique<zmq::socket_t>(*zmq_context_, ZMQ_SUB);
-      subscriber->connect(endpoint);
-      subscriber->set(zmq::sockopt::subscribe, "");  // Subscribe to all messages
-      subscriber->set(zmq::sockopt::rcvtimeo, 10);   // 10ms timeout (non-blocking)
-
-      topic_subscribers_[topic_name] = std::move(subscriber);
-      LOGI("✓ ZMQ SUB socket for topic '%s' CONNECTED to %s", topic_name.c_str(), endpoint.c_str());
-
-      topic_names_.push_back(topic_name);
-      poll_items_.push_back(zmq::pollitem_t{*topic_subscribers_[topic_name], 0, ZMQ_POLLIN, 0});
-
-    } catch (const std::exception& e) {
-      LOGE("Failed to initialize subscriber for topic '%s': %s", topic_name.c_str(), e.what());
-    }
-  }
-}
-
-void ZmqBridgeService::initPublishers()
-{
-  LOGI("Initializing ZMQ publishers...");
-
-  for (const auto& [topic_name, endpoint] : pub_topics_) {
-    try {
-      auto publisher = std::make_unique<zmq::socket_t>(*zmq_context_, ZMQ_PUB);
-      publisher->bind(endpoint);
-      topic_publishers_[topic_name] = std::move(publisher);
-
-      subscribe<ai::flow::adas::ZMQMessage>(topic_name, [this, topic_name](const ai::flow::adas::ZMQMessage& msg) {
-        onInternalMessage(topic_name, msg);
-      });
-
-      LOGI("✓ ZMQ PUB socket for topic '%s' BOUND to %s", topic_name.c_str(), endpoint.c_str());
-
-    } catch (const std::exception& e) {
-      LOGE("Failed to initialize publisher for topic '%s': %s", topic_name.c_str(), e.what());
-    }
+  if (!ok) {
+    LOGD("ZMQ outbound send dropped for '%s' (no peer / HWM)", topic_name.c_str());
   }
 }

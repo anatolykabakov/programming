@@ -19,10 +19,12 @@ import java.util.HashMap;
 class AdasAppInstance implements Runnable {
     private final int fd;
     private final String dbcPath;
+    private final String configPath;
 
-    public AdasAppInstance(int fd, String dbcPath) {
+    public AdasAppInstance(int fd, String dbcPath, String configPath) {
         this.fd = fd;
         this.dbcPath = dbcPath;
+        this.configPath = configPath;
     }
 
     @Override
@@ -32,7 +34,7 @@ class AdasAppInstance implements Runnable {
             return;
         }
         try {
-            AdasAppHandler.nativeStart(this.fd, this.dbcPath);
+            AdasAppHandler.nativeStart(this.fd, this.dbcPath, this.configPath);
         } catch (Throwable t) {
             Log.e("AdasAppHandler", "nativeStart failed (fd=" + fd + ")", t);
         }
@@ -46,11 +48,14 @@ public class AdasAppHandler extends Service {
 
     private static final String ACTION_USB_PERMISSION = "ai.flow.adas.USB_PERMISSION";
     private static final String DBC_ASSET = "vw_mqb_2010.dbc";
+    private static final String CONFIG_ASSET = "config.json";
     /** comma.ai panda USB IDs */
     private static final int PANDA_VID = 0xbbaa;
     private static final int PANDA_PID = 0xddcc;
 
     private String dbcPath;
+    private String configPath;
+    private AdasConfig adasConfig;
 
     /**
      * Must keep this alive for the lifetime of native USB use. If GC finalizes it,
@@ -86,6 +91,12 @@ public class AdasAppHandler extends Service {
 
         dbcPath = ensureDbcAsset(this);
         Log.i(TAG, "DBC path: " + dbcPath);
+        configPath = ensureConfigAsset(this);
+        Log.i(TAG, "Config path: " + configPath);
+        adasConfig = AdasConfig.load(this);
+        Log.i(TAG, "Config lane_keep=" + adasConfig.laneKeep
+                + " localization=" + adasConfig.localization
+                + " camera_calib=" + adasConfig.cameraCalib);
 
         // Register USB receiver
         IntentFilter filter = new IntentFilter();
@@ -193,32 +204,44 @@ public class AdasAppHandler extends Service {
         Log.i(TAG, "USB Device FD: " + fd + " (connection retained; safety/heartbeat in native PandaService)");
 
         nativeStarted = true;
-        new Thread(new AdasAppInstance(fd, dbcPath), "AdasNative").start();
+        new Thread(new AdasAppInstance(fd, dbcPath, configPath), "AdasNative").start();
     }
 
     /** Copy vw_mqb_2010.dbc from APK assets to filesDir so native code can fopen it. */
     static String ensureDbcAsset(Context context) {
-        File out = new File(context.getFilesDir(), DBC_ASSET);
-        if (out.exists() && out.length() > 0) {
+        return copyAssetToFiles(context, DBC_ASSET);
+    }
+
+    /** Copy config.json from APK assets to filesDir for native AdasApp. */
+    static String ensureConfigAsset(Context context) {
+        return copyAssetToFiles(context, CONFIG_ASSET);
+    }
+
+    static String copyAssetToFiles(Context context, String assetName) {
+        File out = new File(context.getFilesDir(), assetName);
+        // Always refresh config.json so APK asset edits apply without reinstall wipe.
+        final boolean force = "config.json".equals(assetName);
+        if (!force && out.exists() && out.length() > 0) {
             return out.getAbsolutePath();
         }
-        try (InputStream in = context.getAssets().open(DBC_ASSET);
+        try (InputStream in = context.getAssets().open(assetName);
              FileOutputStream fos = new FileOutputStream(out)) {
             byte[] buf = new byte[8192];
             int n;
             while ((n = in.read(buf)) > 0) {
                 fos.write(buf, 0, n);
             }
-            Log.i("AdasAppHandler", "Copied asset " + DBC_ASSET + " -> " + out.getAbsolutePath());
+            Log.i("AdasAppHandler", "Copied asset " + assetName + " -> " + out.getAbsolutePath());
             return out.getAbsolutePath();
         } catch (Exception e) {
-            Log.e("AdasAppHandler", "Failed to copy DBC asset " + DBC_ASSET, e);
-            return "";
+            Log.e("AdasAppHandler", "Failed to copy asset " + assetName, e);
+            return out.exists() ? out.getAbsolutePath() : "";
         }
     }
 
     // Native method declarations (only call if nativeLoaded)
-    public static native void nativeStart(int fd, String dbcPath);
+    public static native void nativeStart(int fd, String dbcPath, String configPath);
+    public static native void nativeStop();
 
     static {
         boolean ok = false;

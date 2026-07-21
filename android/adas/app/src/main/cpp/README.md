@@ -49,38 +49,30 @@ The application uses a service-oriented architecture with the ServiceManager fra
     │                   │                    │
     ▼                   ▼                    ▼
 ┌──────────┐    ┌──────────────┐    ┌────────────────┐
-│  Panda   │    │  ZmqBridge   │    │ SensorReader   │
-│ Service  │    │   Service    │    │    Service     │
+│  Panda   │    │  ZmqBridge   │    │ TopicConvert / │
+│ Service  │    │   Service    │    │ LaneKeep / …   │
 └──────────┘    └──────────────┘    └────────────────┘
     │                   │                    │
-    │ sensors/can       │ External ZMQ       │ sensors/*
+    │ sensors/can       │ External ZMQ       │ typed topics
     │                   │ (tcp://...)        │
     ▼                   ▼                    ▼
 ┌───────────────────────────────────────────────────────┐
 │          Internal Topic Bus (Type-safe Pub/Sub)       │
 │  • sensors/imu            • sensors/gps/location      │
-│  • sensors/accelerometer  • sensors/gps/data          │
-│  • sensors/gyroscope      • sensors/camera/state      │
-│  • sensors/magnetometer   • sensors/camera/buffer     │
+│  • sensors/imu_raw        • sensors/imu_yaw           │
+│  • vehicle/chassis        • vision/path               │
+│  • control/lane_keep      • localization/pose         │
 │  • sensors/can                                        │
 └───────────────────────────────────────────────────────┘
-                        │
-                        ▼
-            ┌───────────────────────┐
-            │  Consumer Services     │
-            │  (Your custom logic)   │
-            └───────────────────────┘
 ```
 
 ### Data Flow
 
 1. **External Sources** → Sensors (Android), Panda device
 2. **ZmqBridgeService** → Polls external ZMQ topics (10ms timer)
-3. **External Topics** → Raw data published to ZMQ (tcp://127.0.0.1:5555-5563)
-4. **SensorReaderService** → Subscribes to external topics
-5. **Internal Topics** → Republishes to `sensors/*` topics
-6. **Consumer Services** → Subscribe to internal topics, process data
-7. **PandaService** → Reads CAN data, publishes to `sensors/can`
+3. **External Topics** → Raw data published to ZMQ (`:5555` IN / `:5556` OUT, multipart topic+proto)
+4. **TopicConvert / ImuCalib / LaneKeep / Localization** → Subscribe to internal topics, process data
+5. **PandaService** → Reads CAN data, publishes to `sensors/can`; consumes `controls/steer`
 
 ## Building
 
@@ -121,38 +113,38 @@ The application uses a service-oriented architecture with the ServiceManager fra
 ### ZmqBridgeService
 - **Priority**: High
 - **Timer**: 10ms (100Hz)
-- **Function**: Bridges external ZMQ to internal topics
-- **Subscribes**: 8 external ZMQ endpoints
-- **Publishes**: Raw messages to internal topics
+- **Function**: Bridges external ZMQ ↔ internal topics (one IN + one OUT socket)
+- **IN** `tcp://127.0.0.1:5555`: bind SUB — sensors / commands, multipart `[topic][proto]`
+- **OUT** `tcp://127.0.0.1:5556`: bind PUB — can / vehicle / algorithms → Java BagLogger
+- **Publishes**: Raw messages to matching internal topics
 
-### SensorReaderService
-- **Priority**: Normal
-- **Function**: Processes and republishes sensor data
-- **Subscribes**: External ZMQ topics (imuData, gpsLocation, etc.)
-- **Publishes**: 8 internal `sensors/*` topics
-- **Features**: Logging, validation, republishing
+### TopicConvertService
+- **Priority**: High
+- **Function**: ZMQ protobuf → typed samples (`vision/path`, `vehicle/chassis`, `imu_raw`, GPS ENU)
+- **Subscribes**: `vision/lanes`, `vehicle/state`, `sensors/imu`, `sensors/gps/location`
 
 ## Internal Topics
 
-See [docs/SENSOR_TOPICS.md](docs/SENSOR_TOPICS.md) for complete reference.
+See `include/utils/adas_topics.h` for the canonical list.
 
 ### Available Topics
 
-| Topic | Data Type | Frequency | Source |
-|-------|-----------|-----------|--------|
-| `sensors/imu` | IMU Data | ~100Hz | Android IMU |
-| `sensors/accelerometer` | Accel | ~100Hz | Android |
-| `sensors/gyroscope` | Gyro | ~100Hz | Android |
-| `sensors/magnetometer` | Mag | ~100Hz | Android |
-| `sensors/gps/location` | Location | ~1Hz | Android GPS |
-| `sensors/gps/data` | GPS Info | ~1Hz | Android GPS |
-| `sensors/camera/state` | State | ~30Hz | Camera |
-| `sensors/camera/buffer` | Frames | ~30Hz | Camera |
-| `sensors/can` | CAN Frames | ~20Hz | Panda |
+| Topic | Data Type | Source |
+|-------|-----------|--------|
+| `sensors/imu` | IMU protobuf | Android ZMQ |
+| `sensors/imu_raw` | RawImuSample | TopicConvert |
+| `sensors/imu_yaw` | ImuSample | ImuCalib |
+| `sensors/gps/location` | GPS / GpsSample ENU | Android → TopicConvert |
+| `vision/lanes` | LaneLines | Android vision |
+| `vision/path` | LanePathMsg | TopicConvert |
+| `vehicle/state` | CarState | Android / bag |
+| `vehicle/chassis` | ChassisSample | TopicConvert / Panda |
+| `control/lane_keep` | LaneKeepState | LaneKeep |
+| `controls/steer` | SteerCommand | LaneKeep → Panda |
+| `localization/pose` | LocalizationPose | Localization |
+| `sensors/can` | CAN Frames | Panda |
 
 ## Creating Custom Services
-
-See `examples/example_sensor_consumer_service.cpp` for a complete example.
 
 ### Basic Template
 
@@ -191,32 +183,7 @@ public:
 
 ### Adding to AdasApp
 
-Edit `adas_app.cpp`:
-
-```cpp
-void AdasApp::setupServices()
-{
-  // ... existing services ...
-
-  // Add your custom service
-  auto my_service = std::make_shared<MyService>();
-  my_service->setPriority(microros::Service::Priority::Normal);
-
-  std::vector<microros::ServicePtr> services = {
-    panda_service_,
-    zmq_bridge_service_,
-    sensor_service_,
-    my_service  // <-- Add here
-  };
-
-  service_manager_ = std::make_shared<microros::ServiceManager>(
-    microros::ServiceManager::Mode::RealTime,
-    services,
-    microros::ServiceManager::ThreadingMode::ThreadPool,
-    4  // Increase worker threads
-  );
-}
-```
+Edit `adas_app.cpp::setupRealtimeServices()` and push your service into the `services` vector (gated by `runtime_cfg_` if needed).
 
 ## Testing
 
@@ -330,12 +297,11 @@ When adding new services:
 2. Inherit from `microros::Service`
 3. Implement `configure()` and `reset()`
 4. Add to CMakeLists.txt
-5. Register in `adas_app.cpp::setupServices()`
+5. Register in `adas_app.cpp::setupRealtimeServices()`
 6. Write tests in `tests/`
 
 ## Support
 
 For questions or issues, refer to:
-- `docs/SENSOR_TOPICS.md` - Topic reference
-- `examples/example_sensor_consumer_service.cpp` - Usage examples
+- `include/utils/adas_topics.h` - Topic reference
 - `tests/test_service_manager.cpp` - Test examples

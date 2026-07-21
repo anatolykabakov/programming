@@ -58,21 +58,67 @@ public class MainActivity extends AppCompatActivity {
         gpsHandler = new GPSHandler(this);
         imuHandler = new IMUHandler(this);
 
+        AdasConfig config = AdasConfig.load(this);
+        laneOverlay.setIntrinsics(
+                config.fx, config.fy, config.cx, config.cy,
+                cameraHandler.W > 0 ? cameraHandler.W : config.frameW,
+                cameraHandler.H > 0 ? cameraHandler.H : config.frameH);
+        laneOverlay.setCameraHeight(config.camZ);
+        laneOverlay.setWaypointShift(config.camX);
+        laneOverlay.setSteerRatio(config.steerRatio);
+
+        // PP / steer / live calib HUD from native via ZMQ OUT (:5556)
+        ZMQBridgeService.setOutboundListener((topic, msg) -> {
+            if (laneOverlay == null) {
+                return;
+            }
+            if (msg.hasLaneKeep()) {
+                LaneKeepOuter.LaneKeepState lk = msg.getLaneKeep();
+                laneOverlay.setLaneKeep(
+                        lk.getHasTarget(),
+                        (float) lk.getTargetX(),
+                        (float) lk.getTargetY(),
+                        (float) lk.getLookaheadM(),
+                        (float) lk.getCurvature(),
+                        (float) lk.getSteerRad(),
+                        lk.getStatus());
+            }
+            if (msg.hasSteerCommand()) {
+                SteerOuter.SteerCommand sc = msg.getSteerCommand();
+                laneOverlay.setSteerCommand(sc.getTorqueCnm(), sc.getEnabled());
+            }
+            if (msg.hasCameraCalib()) {
+                CameraCalibOuter.CameraCalibrationState c = msg.getCameraCalib();
+                laneOverlay.setCameraCalib(
+                        (float) c.getPitchDeg(),
+                        (float) c.getYawDeg(),
+                        (float) c.getRollDeg(),
+                        (float) c.getCameraHeightM(),
+                        c.getCalibrationSuccess(),
+                        c.getCalPercent() > 0 ? c.getCalPercent()
+                                : Math.min(100, c.getNUpdates() * 20));
+            }
+        });
+
         // ONNX first: with Panda plugged in, AdasAppHandler immediately starts native
         // (USB fd + panda + protobuf) and concurrent createSession OOMs / fails.
-        try {
-            visionPipeline = new VisionPipeline(this, laneOverlay);
-            cameraHandler.setVisionPipeline(visionPipeline);
-            cameraHandler.setLaneOverlay(laneOverlay);
-            laneOverlay.setIntrinsics(930f, 930f, 640f, 360f, cameraHandler.W, cameraHandler.H);
-            Log.i(LOG_TAG, "VisionPipeline ready (supercombo ONNX)");
-        } catch (Exception e) {
-            Log.e(LOG_TAG, "VisionPipeline init failed", e);
-            String detail = e.getClass().getSimpleName() + ": " + e.getMessage();
-            if (e.getCause() != null) {
-                detail += " | cause=" + e.getCause().getMessage();
+        if (config.visionSupercombo) {
+            try {
+                visionPipeline = new VisionPipeline(this, laneOverlay, config.cameraCalib);
+                cameraHandler.setVisionPipeline(visionPipeline);
+                cameraHandler.setLaneOverlay(laneOverlay);
+                Log.i(LOG_TAG, "VisionPipeline ready (supercombo ONNX, posePub="
+                        + config.cameraCalib + ")");
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "VisionPipeline init failed", e);
+                String detail = e.getClass().getSimpleName() + ": " + e.getMessage();
+                if (e.getCause() != null) {
+                    detail += " | cause=" + e.getCause().getMessage();
+                }
+                Toast.makeText(this, "ONNX init failed: " + detail, Toast.LENGTH_LONG).show();
             }
-            Toast.makeText(this, "ONNX init failed: " + detail, Toast.LENGTH_LONG).show();
+        } else {
+            Log.i(LOG_TAG, "vision_supercombo disabled in assets/config.json");
         }
 
         // Panda / ZMQ after model is in memory
@@ -235,6 +281,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        ZMQBridgeService.setOutboundListener(null);
         if (visionPipeline != null) visionPipeline.close();
         stopCamera();
         if (gpsHandler != null) gpsHandler.stop();

@@ -11,7 +11,8 @@ import ai.flow.adas.Messages;
 import ai.flow.adas.ProtoUtils;
 
 /**
- * Owns the ONNX runner thread: Image/Bitmap in → LaneLines out → overlay + ZMQ.
+ * ONNX runner thread: Bitmap → LaneLines + CameraOdometry → overlay / ZMQ.
+ * Live calib algorithm lives in C++ CameraCalibService (flowpilot pose path).
  */
 public class VisionPipeline {
     private static final String TAG = "VisionPipeline";
@@ -21,12 +22,19 @@ public class VisionPipeline {
     private final SupercomboOnnxRunner runner;
     private final LanePublisher publisher;
     private final LaneOverlayView overlay;
+    private final boolean publishPose;
 
     private volatile boolean busy;
     private int frameId;
 
     public VisionPipeline(Context context, LaneOverlayView overlay) throws Exception {
+        this(context, overlay, true);
+    }
+
+    public VisionPipeline(Context context, LaneOverlayView overlay, boolean cameraCalib)
+            throws Exception {
         this.overlay = overlay;
+        this.publishPose = cameraCalib;
         this.runner = new SupercomboOnnxRunner(context.getApplicationContext());
         this.publisher = new LanePublisher();
         thread = new HandlerThread("SupercomboInfer");
@@ -43,13 +51,22 @@ public class VisionPipeline {
         final int id = frameId++;
         handler.post(() -> {
             try {
-                LaneLines lanes = runner.run(copy, id);
-                if (lanes != null) {
-                    overlay.setLanes(lanes);
-                    publisher.publish(lanes);
-                    Messages.ZMQMessage bagMsg = ProtoUtils.createLaneLinesMessage(lanes);
-                    if (bagMsg != null) {
-                        Logger.getInstance().logZMQMessage(bagMsg);
+                SupercomboOnnxRunner.Result res = runner.run(copy, id);
+                if (res == null || res.lanes == null) {
+                    return;
+                }
+                LaneLines lanes = res.lanes;
+                overlay.setLanes(lanes);
+                publisher.publish(lanes);
+                Messages.ZMQMessage bagMsg = ProtoUtils.createLaneLinesMessage(lanes);
+                if (bagMsg != null) {
+                    Logger.getInstance().logZMQMessage(bagMsg);
+                }
+                if (publishPose && res.pose != null && res.pose.valid) {
+                    Messages.ZMQMessage poseMsg =
+                            ProtoUtils.createCameraOdometryMessage(lanes.timestampMs, id, res.pose);
+                    if (poseMsg != null) {
+                        Logger.getInstance().logZMQMessage(poseMsg);
                     }
                 }
             } catch (Exception e) {

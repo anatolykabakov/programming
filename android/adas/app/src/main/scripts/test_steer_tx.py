@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Inject SteerCommand over controls/steer; PandaService / CarController owns HCA+LDW TX.
+Inject SteerCommand over the shared inbound ZMQ socket (controls/steer).
 
 Prereqs (on car with app + panda running):
   1. Ignition on → panda safety volkswagen @15
   2. Stock ACC engaged (Set) → controls_allowed=true
   3. Moving (not standstill) and EPS_HCA_Status ready(3)/active(5)
-  4. Free port 5564: bind controls/steer PUB here
+
+Wire (native binds both):
+  IN  tcp://127.0.0.1:5555  — PUB connect, multipart [topic][ZMQMessage]
+  OUT tcp://127.0.0.1:5556  — SUB connect (vehicle/state, panda/health, …)
 
 From host PC:
-  adb reverse tcp:5564 tcp:5564
-  adb forward tcp:5565 tcp:5565
-  adb forward tcp:5566 tcp:5566
+  adb reverse tcp:5555 tcp:5555
+  adb forward tcp:5556 tcp:5556
 
   python3 test_steer_tx.py --left --torque 220 --seconds 4
 
@@ -89,9 +91,8 @@ def main() -> int:
         default=None,
         help="Stop early when peak |Δ| reaches this many degrees",
     )
-    p.add_argument("--tx", default="tcp://127.0.0.1:5564", help="controls/steer PUB bind")
-    p.add_argument("--vehicle", default="tcp://127.0.0.1:5566", help="vehicle/state SUB")
-    p.add_argument("--health", default="tcp://127.0.0.1:5565", help="panda/health SUB")
+    p.add_argument("--tx", default="tcp://127.0.0.1:5555", help="inbound PUB connect (native SUB)")
+    p.add_argument("--rx", default="tcp://127.0.0.1:5556", help="outbound SUB connect (native PUB)")
     p.add_argument("--dry-run", action="store_true", help="Print ramp only, no ZMQ")
     args = p.parse_args()
 
@@ -112,15 +113,15 @@ def main() -> int:
 
     ctx = zmq.Context()
     pub = ctx.socket(zmq.PUB)
-    pub.bind(args.tx)
-    print(f"PUB controls/steer bound {args.tx} (wait for phone SUB…)")
+    pub.connect(args.tx)
+    print(f"PUB connected {args.tx} (native IN / wait for bind…)")
     time.sleep(0.8)
 
     sub = ctx.socket(zmq.SUB)
-    sub.connect(args.vehicle)
-    sub.connect(args.health)
+    sub.connect(args.rx)
     sub.setsockopt(zmq.SUBSCRIBE, b"")
     sub.setsockopt(zmq.RCVTIMEO, 50)
+    print(f"SUB connected {args.rx} (native OUT)")
 
     angle0 = None
     angle = None
@@ -137,9 +138,13 @@ def main() -> int:
         nonlocal angle0, angle, peak_delta, peak_abs
         try:
             while True:
-                raw = sub.recv(zmq.NOBLOCK)
+                raw = sub.recv_multipart(zmq.NOBLOCK)
+                if len(raw) >= 2:
+                    payload = raw[1]
+                else:
+                    payload = raw[0]
                 msg = messages_pb2.ZMQMessage()
-                msg.ParseFromString(raw)
+                msg.ParseFromString(payload)
                 if msg.HasField("car_state"):
                     angle = msg.car_state.steering_angle_deg
                     if angle0 is None:
@@ -159,7 +164,8 @@ def main() -> int:
             pass
 
     def send_tq(tq: int, enabled: bool) -> None:
-        pub.send(make_steer_cmd(tq, enabled))
+        body = make_steer_cmd(tq, enabled)
+        pub.send_multipart([b"controls/steer", body])
 
     def reached_delta() -> bool:
         if want_delta is None:

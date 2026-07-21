@@ -37,21 +37,19 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from vis.android_bag_player import AndroidBagPlayer
-from vis.gps_utils import calculate_initial_heading_from_gps, gps_to_local_coords
-from vis.imu_utils import process_imu_for_odometry
+from core.gps_utils import calculate_initial_heading_from_gps, gps_to_local_coords
+from core.imu_utils import process_imu_for_odometry
 from core.lane_projection import (
     CameraIntrinsics,
     intrinsics_from_messages,
-    project_iso_xyz,
 )
 from core.supercombo_compare import (
     SupercomboBev,
     draw_bag_lanes,
-    draw_pts,
-    draw_runtime_lanes,
+    draw_supercombo_overlay,
     make_overlay_geometry,
 )
-from core.supercombo_parse import X_IDXS, explain_output
+from core.supercombo_parse import explain_output
 from vis.trajectory_calculators import (
     calculate_trajectory,
     calculate_trajectory_ekf,
@@ -64,6 +62,7 @@ from core.lane_keep import (
 )
 from core.lane_keep_viz import draw_lane_keep_overlay
 from core.pure_pursuit import plan_to_polyline_ego
+from core.viz_params_ui import OverlayUiParams, RpyPpControlBar
 from core.vanishing_point_calib import (
     K_from_fx_fy_cx_cy,
     VanishingPointCalibrator,
@@ -130,9 +129,12 @@ class InteractiveVisualizer:
         self.intr_msg = None
         self.supercombo = SupercomboBev()
         self.bag_dir: Optional[Path] = None
-        # AAD vanishing-point pitch/yaw (roll=0); prior ≈ Golf windshield
+        # AAD vanishing-point pitch/yaw (roll=0); prior ≈ Golf windshield — C++ CameraCalibService
         self.vp_calib = VanishingPointCalibrator(
-            history_len=50, estimated_pitch_deg=-6.0, estimated_yaw_deg=0.0
+            history_len=50,
+            estimated_pitch_deg=-6.0,
+            estimated_yaw_deg=0.0,
+            camera_height_m=1.40,
         )
         self._vp_last_img_index: Optional[int] = None
         self._play_last_wall_ms: Optional[float] = None
@@ -228,83 +230,35 @@ class InteractiveVisualizer:
         self.status_label = ttk.Label(control, text="Ready", foreground="green")
         self.status_label.pack(side=tk.RIGHT, padx=10)
 
-        # Second row: roll / pitch / yaw (AAD CameraGeometry degrees)
-        rpy = ttk.Frame(self.master)
-        rpy.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(0, 4))
-
-        self.roll_var = tk.DoubleVar(value=0.0)
-        self.pitch_var = tk.DoubleVar(value=-6.0)
-        self.yaw_var = tk.DoubleVar(value=0.0)
-        self.height_var = tk.DoubleVar(value=1.40)
-
-        def _add_rpy_slider(
-            parent, name: str, var: tk.DoubleVar, lo: float, hi: float, unit: str = "°"
-        ):
-            ttk.Label(parent, text=f"{name}:").pack(side=tk.LEFT, padx=(8, 2))
-            ttk.Scale(
-                parent,
-                from_=lo,
-                to=hi,
-                orient=tk.HORIZONTAL,
-                variable=var,
-                length=160,
-                command=lambda _v: self._on_rpy_slider(),
-            ).pack(side=tk.LEFT, padx=2)
-            lab = ttk.Label(
-                parent,
-                text=f"{var.get():.2f}{unit}" if unit == "m" else f"{var.get():.1f}{unit}",
-                width=8,
-            )
-            lab.pack(side=tk.LEFT, padx=2)
-            return lab
-
-        self.roll_label = _add_rpy_slider(rpy, "Roll", self.roll_var, -15.0, 15.0)
-        self.pitch_label = _add_rpy_slider(rpy, "Pitch", self.pitch_var, -20.0, 10.0)
-        self.yaw_label = _add_rpy_slider(rpy, "Yaw", self.yaw_var, -20.0, 20.0)
-        self.height_label = _add_rpy_slider(rpy, "Height", self.height_var, 0.80, 2.20, unit="m")
-        ttk.Button(rpy, text="Reset RPY", command=self._reset_rpy_sliders).pack(
-            side=tk.LEFT, padx=12
+        # RPY / PP — shared with MetaDrive sim
+        initial = OverlayUiParams(
+            roll_deg=0.0,
+            pitch_deg=-6.0,
+            yaw_deg=0.0,
+            height_m=1.40,
+            pp_k_dd=0.4,
+            pp_ld_min=3.0,
+            pp_ld_max=20.0,
+            wheelbase=DEFAULTS.wheelbase,
+            pp_shift=DEFAULTS.pp_shift,
         )
-
-        # Third row: pure pursuit (AAD)
-        pp_row = ttk.Frame(self.master)
-        pp_row.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(0, 4))
-        self.pp_kdd_var = tk.DoubleVar(value=0.4)
-        self.pp_ld_min_var = tk.DoubleVar(value=3.0)
-        self.pp_ld_max_var = tk.DoubleVar(value=20.0)
-        self.pp_wb_var = tk.DoubleVar(value=2.636)
-        self.pp_shift_var = tk.DoubleVar(value=DEFAULTS.pp_shift)
+        self.params_bar = RpyPpControlBar(
+            self.master,
+            initial,
+            on_rpy=self._on_rpy_params,
+            on_pp=self._on_pp_params,
+        )
+        self.roll_var = self.params_bar.roll_var
+        self.pitch_var = self.params_bar.pitch_var
+        self.yaw_var = self.params_bar.yaw_var
+        self.height_var = self.params_bar.height_var
+        self.pp_kdd_var = self.params_bar.pp_kdd_var
+        self.pp_ld_min_var = self.params_bar.pp_ld_min_var
+        self.pp_ld_max_var = self.params_bar.pp_ld_max_var
+        self.pp_wb_var = self.params_bar.pp_wb_var
+        self.pp_shift_var = self.params_bar.pp_shift_var
+        self.pp_status = self.params_bar.pp_status
         self._pp_controller = LaneKeepController(mode="pure_pursuit")
-
-        def _add_pp_slider(parent, name: str, var: tk.DoubleVar, lo: float, hi: float, fmt: str):
-            ttk.Label(parent, text=f"{name}:").pack(side=tk.LEFT, padx=(8, 2))
-            ttk.Scale(
-                parent,
-                from_=lo,
-                to=hi,
-                orient=tk.HORIZONTAL,
-                variable=var,
-                length=120,
-                command=lambda _v: self._on_pp_slider(),
-            ).pack(side=tk.LEFT, padx=2)
-            lab = ttk.Label(parent, text=fmt.format(var.get()), width=7)
-            lab.pack(side=tk.LEFT, padx=2)
-            return lab
-
-        self.pp_kdd_label = _add_pp_slider(pp_row, "K_dd", self.pp_kdd_var, 0.05, 1.5, "{:.2f}")
-        self.pp_ld_min_label = _add_pp_slider(
-            pp_row, "Ld_min", self.pp_ld_min_var, 1.0, 15.0, "{:.1f}"
-        )
-        self.pp_ld_max_label = _add_pp_slider(
-            pp_row, "Ld_max", self.pp_ld_max_var, 5.0, 40.0, "{:.1f}"
-        )
-        self.pp_wb_label = _add_pp_slider(pp_row, "L_wb", self.pp_wb_var, 2.0, 3.5, "{:.2f}")
-        self.pp_shift_label = _add_pp_slider(pp_row, "shift", self.pp_shift_var, 0.0, 3.0, "{:.2f}")
-        ttk.Button(pp_row, text="Reset PP", command=self._reset_pp_sliders).pack(
-            side=tk.LEFT, padx=10
-        )
-        self.pp_status = ttk.Label(pp_row, text="PP —")
-        self.pp_status.pack(side=tk.LEFT, padx=8)
 
         main = ttk.Frame(self.master)
         main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -628,38 +582,30 @@ class InteractiveVisualizer:
         self.update_sensor_data(self.current_index)
         self.update_time_label(self.current_index)
 
-    def _on_pp_slider(self) -> None:
-        self.pp_kdd_label.config(text=f"{float(self.pp_kdd_var.get()):.2f}")
-        self.pp_ld_min_label.config(text=f"{float(self.pp_ld_min_var.get()):.1f}")
-        self.pp_ld_max_label.config(text=f"{float(self.pp_ld_max_var.get()):.1f}")
-        self.pp_wb_label.config(text=f"{float(self.pp_wb_var.get()):.2f}")
-        self.pp_shift_label.config(text=f"{float(self.pp_shift_var.get()):.2f}")
+    def _on_pp_params(self, p: OverlayUiParams) -> None:
+        self.params_bar.set_pp_status(
+            f"K={p.pp_k_dd:.2f} Ld=[{p.pp_ld_min:.1f},{p.pp_ld_max:.1f}] shift={p.pp_shift:.2f}"
+        )
         if not self.playing:
             self.update_camera_view(self.current_index)
 
+    def _on_pp_slider(self) -> None:
+        self._on_pp_params(self.params_bar.params())
+
     def _reset_pp_sliders(self) -> None:
-        self.pp_kdd_var.set(DEFAULTS.pp_k_dd)
-        self.pp_ld_min_var.set(DEFAULTS.pp_ld_min)
-        self.pp_ld_max_var.set(DEFAULTS.pp_ld_max)
-        self.pp_wb_var.set(DEFAULTS.wheelbase)
-        self.pp_shift_var.set(DEFAULTS.pp_shift)
-        self._on_pp_slider()
+        self.params_bar.reset_pp()
 
     def _sync_pp_controller(self) -> None:
         """Refresh shared LaneKeepController from UI sliders."""
+        p = self.params_bar.params()
         self._pp_controller = LaneKeepController(
             mode="pure_pursuit",
-            wheelbase=float(self.pp_wb_var.get()),
-            pp_k_dd=float(self.pp_kdd_var.get()),
-            pp_ld_min=float(self.pp_ld_min_var.get()),
-            pp_ld_max=float(self.pp_ld_max_var.get()),
-            pp_shift=float(self.pp_shift_var.get()),
+            wheelbase=p.wheelbase,
+            pp_k_dd=p.pp_k_dd,
+            pp_ld_min=p.pp_ld_min,
+            pp_ld_max=p.pp_ld_max,
+            pp_shift=p.pp_shift,
         )
-        if self._pp_controller.pp.ld_min > self._pp_controller.pp.ld_max:
-            self._pp_controller.pp.ld_min, self._pp_controller.pp.ld_max = (
-                self._pp_controller.pp.ld_max,
-                self._pp_controller.pp.ld_min,
-            )
 
     def _ego_speed_mps(self, index: int) -> float:
         """Best-effort ego speed (m/s) from wheels or GPS."""
@@ -674,34 +620,28 @@ class InteractiveVisualizer:
                 return max(0.0, float(gps[4]))
         return 0.0
 
-    def _on_rpy_slider(self) -> None:
-        self._overlay_roll_deg = float(self.roll_var.get())
-        self._overlay_pitch_deg = float(self.pitch_var.get())
-        self._overlay_yaw_deg = float(self.yaw_var.get())
-        self._overlay_height_m = float(self.height_var.get())
-        self.roll_label.config(text=f"{self._overlay_roll_deg:.1f}°")
-        self.pitch_label.config(text=f"{self._overlay_pitch_deg:.1f}°")
-        self.yaw_label.config(text=f"{self._overlay_yaw_deg:.1f}°")
-        self.height_label.config(text=f"{self._overlay_height_m:.2f}m")
+    def _on_rpy_params(self, p: OverlayUiParams) -> None:
+        self._overlay_roll_deg = p.roll_deg
+        self._overlay_pitch_deg = p.pitch_deg
+        self._overlay_yaw_deg = p.yaw_deg
+        self._overlay_height_m = p.height_m
         if not self.playing:
             self.update_camera_view(self.current_index)
 
+    def _on_rpy_slider(self) -> None:
+        self._on_rpy_params(self.params_bar.params())
+
     def _reset_rpy_sliders(self) -> None:
-        self.roll_var.set(0.0)
-        self.pitch_var.set(-6.0)
-        self.yaw_var.set(0.0)
-        self.height_var.set(1.40)
-        self._on_rpy_slider()
+        self.params_bar.reset_rpy()
 
     def _sync_rpy_sliders_from_overlay(self) -> None:
-        self.roll_var.set(self._overlay_roll_deg)
-        self.pitch_var.set(self._overlay_pitch_deg)
-        self.yaw_var.set(self._overlay_yaw_deg)
-        self.height_var.set(self._overlay_height_m)
-        self.roll_label.config(text=f"{self._overlay_roll_deg:.1f}°")
-        self.pitch_label.config(text=f"{self._overlay_pitch_deg:.1f}°")
-        self.yaw_label.config(text=f"{self._overlay_yaw_deg:.1f}°")
-        self.height_label.config(text=f"{self._overlay_height_m:.2f}m")
+        self.params_bar.set_rpy(
+            roll_deg=self._overlay_roll_deg,
+            pitch_deg=self._overlay_pitch_deg,
+            yaw_deg=self._overlay_yaw_deg,
+            height_m=self._overlay_height_m,
+            notify=False,
+        )
 
     def reset_vp_calib(self, load_saved: bool = False) -> None:
         """Reset online VP history; optionally load session ``calib_rpy.json``."""
@@ -761,7 +701,7 @@ class InteractiveVisualizer:
 
     def _update_vp_status_label(self) -> None:
         ok = self.vp_calib.calibration_success
-        n = len(self.vp_calib.pitch_yaw_history)
+        n = self.vp_calib.history_pending
         tag = "OK" if ok else f"…{n}/{self.vp_calib.history_len}"
         self.vp_status.config(
             text=(
@@ -868,65 +808,42 @@ class InteractiveVisualizer:
             out = self.supercombo.infer(img, cache_key=img_index)
 
             if out is not None:
-                if not use_bag_lanes:
-                    # road edges from runtime model
-                    for edge in out.edges:
-                        pts = project_iso_xyz(
-                            X_IDXS,
-                            edge.y,
-                            np.zeros_like(edge.y),
+                if use_bag_lanes:
+                    bag_lanes = self._find_bag_lanes_by_time(float(ts_cam))
+                    if bag_lanes is not None:
+                        # Bag lanes/plan are already ISO Y-left (Android negated).
+                        # Do not redraw runtime plan/lanes — they use raw Y-right + y_sign=-1.
+                        draw_bag_lanes(img, bag_lanes, geom, w, h, y_sign=1.0)
+                        cv2.putText(
+                            img,
+                            f"bag vision/lanes  plan#{getattr(bag_lanes, 'plan_hyp', -1)}",
+                            (8, 20),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.4,
+                            (255, 255, 255),
+                            1,
+                            cv2.LINE_AA,
+                        )
+                    else:
+                        draw_supercombo_overlay(
+                            img,
+                            out,
                             geom,
                             w,
                             h,
                             y_sign=-1.0,
+                            lane_tag="runtime (no bag sync)",
                         )
-                        draw_pts(img, pts, (0, 0, 255), 2)
-
-                if use_bag_lanes:
-                    bag_lanes = self._find_bag_lanes_by_time(float(ts_cam))
-                    if bag_lanes is not None:
-                        draw_bag_lanes(img, bag_lanes, geom, w, h, y_sign=-1.0)
-                        lane_tag = "bag vision/lanes"
-                    else:
-                        draw_runtime_lanes(img, out, geom, w, h, y_sign=-1.0)
-                        lane_tag = "runtime (no bag sync)"
                 else:
-                    draw_runtime_lanes(img, out, geom, w, h, y_sign=-1.0)
-                    lane_tag = "runtime supercombo"
-
-                pts = project_iso_xyz(
-                    out.plan.x,
-                    out.plan.y,
-                    out.plan.z,
-                    geom,
-                    w,
-                    h,
-                    x_min=0.5,
-                    y_sign=-1.0,
-                )
-                draw_pts(img, pts, (0, 255, 0), 3)
-
-                probs = [f"{l.prob:.2f}" for l in out.lanes]
-                cv2.putText(
-                    img,
-                    f"plan hyp#{out.plan.hyp_index}  lanes={lane_tag}  p={probs}",
-                    (8, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4,
-                    (255, 255, 255),
-                    1,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    img,
-                    "green=PLAN  yellow=lanes  red=edges",
-                    (8, h - 12),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (0, 255, 0),
-                    1,
-                    cv2.LINE_AA,
-                )
+                    draw_supercombo_overlay(
+                        img,
+                        out,
+                        geom,
+                        w,
+                        h,
+                        y_sign=-1.0,
+                        lane_tag="runtime supercombo",
+                    )
             else:
                 cv2.putText(
                     img,

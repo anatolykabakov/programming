@@ -14,7 +14,7 @@ Lane source:
 Usage:
   python3 -m sim.main --controller pure_pursuit --show --lanes supercombo --compare-gt
   python3 -m sim.main --lanes gt --vp-source gt --show
-  python3 -m sim.main --lanes supercombo --vp-debug --overlay
+  python3 -m sim.main --lanes supercombo --show --cv-show   # legacy OpenCV windows
 """
 
 from __future__ import annotations
@@ -43,10 +43,13 @@ except ImportError as e:
     print("  # or: git clone https://github.com/metadriverse/metadrive && pip install -e .")
     sys.exit(1)
 
+from core.online_localizer import OnlineVehicleEkf, draw_trajectory_panel
 from core.lane_keep import LaneKeepController, LaneKeepResult
 from core.lane_keep_viz import draw_lane_keep_overlay
 from core.gt_compare import GtCompareAccumulator, compare_to_gt
 from core.pure_pursuit import plan_to_polyline_ego
+from core.native import cpp_available
+
 from core.supercombo_compare import (
     DEFAULT_MODEL,
     SupercomboBev,
@@ -63,9 +66,11 @@ from core.vanishing_point_calib import (
     lines_from_image_hough,
     lines_from_projected_lanes,
 )
+from core.viz_params_ui import OverlayUiParams
 from sim.camera_utils import CameraGeometry, CameraParams
 from sim.controller import SimpleController
 from sim.observation_parser import ObservationParser
+from sim.sim_ui import SimLiveUi
 
 
 def save_data(img, obs_data, frame, out_dir: Path, overlay_img=None):
@@ -174,6 +179,25 @@ class MetaDriveSimulator:
                 pd_kpsi=args.pd_kpsi,
             )
 
+        # Online EKF + dead-reckoning (bag-style trajectory panel)
+        cfg = self.env.config
+        self._sim_dt = float(cfg.get("physics_world_step_size", 0.02)) * float(
+            cfg.get("decision_repeat", 1)
+        )
+        self.ekf_tracker: Optional[OnlineVehicleEkf] = None
+        if args.traj:
+            self.ekf_tracker = OnlineVehicleEkf(
+                wheelbase=args.wheelbase,
+                gps_noise_pos=args.ekf_gps_noise,
+                gps_update_interval=args.ekf_gps_interval,
+                gps_meas_noise=args.ekf_gps_meas_noise,
+            )
+            print(
+                f"EKF traj ON  dt={self._sim_dt:.3f}s  "
+                f"gps_interval={args.ekf_gps_interval}s  "
+                f"gps_meas_noise={args.ekf_gps_meas_noise}m"
+            )
+
         self.supercombo: Optional[SupercomboBev] = None
         if args.lanes == "supercombo" or args.draw_supercombo:
             self.supercombo = SupercomboBev(Path(args.supercombo_model))
@@ -186,10 +210,14 @@ class MetaDriveSimulator:
         self._init_pitch = self.pitch_deg
         self._init_yaw = self.yaw_deg
         self._init_roll = self.roll_deg
+        self._init_height = self.camera_height
+        self._ui: Optional[SimLiveUi] = None
+        self._pp_enabled = self.args.controller != "straight"
         self.vp_calib = VanishingPointCalibrator(
             history_len=args.vp_history,
             estimated_pitch_deg=self.pitch_deg,
             estimated_yaw_deg=self.yaw_deg,
+            camera_height_m=self.camera_height,
         )
         self.vp_enabled = bool(args.vp_calib)
         self.vp_debug = bool(args.vp_debug)
@@ -261,22 +289,31 @@ class MetaDriveSimulator:
             self._log_writer.writeheader()
 
         cmp_tag = f"  compare_gt=True  pp_on={args.pp_on}" if args.compare_gt else ""
+        traj_tag = f"  traj={bool(self.ekf_tracker)}"
+        cpp_tag = f"  cpp={'ON' if cpp_available() else 'off'}"
         print(
             f"Controller={args.controller}  lanes={args.lanes}  speed={args.speed} m/s  "
             f"traffic_density={args.traffic_density}  "
             f"vp={self.vp_enabled}  show={args.show}  save_every={args.save_every}  "
-            f"overlay={args.overlay}{cmp_tag}"
+            f"overlay={args.overlay}{cmp_tag}{traj_tag}{cpp_tag}"
         )
         print(f"Output → {self.out_dir.resolve()}")
         if args.show:
-            cv2.namedWindow("MetaDrive | camera + PP", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow("MetaDrive | camera + PP", args.width, args.height)
-            print("Keys: q/Esc quit  r reset VP  d VP debug")
+            if args.cv_show:
+                cv2.namedWindow("MetaDrive | camera + PP", cv2.WINDOW_NORMAL)
+                cv2.resizeWindow("MetaDrive | camera + PP", args.width, args.height)
+                print("OpenCV keys: q/Esc quit  r reset VP  d VP debug")
+            else:
+                print("Tk UI: live RPY/PP sliders (bag-style). Close window to quit.")
             if args.compare_gt:
                 print(
                     "GT compare: white=GT centerline / GT target ring; "
                     "cyan=ctrl path; red=ctrl PP target"
                 )
+        if args.traj and args.cv_show and (args.show or args.overlay):
+            cv2.namedWindow("MetaDrive | trajectory", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("MetaDrive | trajectory", 480, 480)
+            print("Trajectory: blue=GT  green=Odom  orange=EKF")
 
     def _load_calib(self, path: Optional[str]) -> None:
         if not path:
@@ -359,15 +396,74 @@ class MetaDriveSimulator:
                 f"VP calib #{self.vp_calib.n_updates}: "
                 f"pitch={self.pitch_deg:.2f}° yaw={self.yaw_deg:.2f}°"
             )
+            if self._ui is not None:
+                self._ui.sync_rpy_from_sim()
 
     def _reset_vp(self) -> None:
         self.vp_calib.reset()
         self.pitch_deg = float(self._init_pitch)
         self.yaw_deg = float(self._init_yaw)
         self.roll_deg = float(self._init_roll)
+        self.camera_height = float(self._init_height)
         self.vp_calib.estimated_pitch_deg = self.pitch_deg
         self.vp_calib.estimated_yaw_deg = self.yaw_deg
         print(f"VP reset → P={self.pitch_deg:.1f} Y={self.yaw_deg:.1f} (MD extrinsics)")
+
+    def apply_overlay_rpy(self, p: OverlayUiParams) -> None:
+        self.roll_deg = float(p.roll_deg)
+        self.pitch_deg = float(p.pitch_deg)
+        self.yaw_deg = float(p.yaw_deg)
+        self.camera_height = float(p.height_m)
+        # Keep VP estimates in sync with manual override
+        self.vp_calib.estimated_pitch_deg = self.pitch_deg
+        self.vp_calib.estimated_yaw_deg = self.yaw_deg
+
+    def apply_pp_params(self, p: OverlayUiParams) -> None:
+        p = p.clamped_pp()
+        self.args.pp_k_dd = float(p.pp_k_dd)
+        self.args.pp_ld_min = float(p.pp_ld_min)
+        self.args.pp_ld_max = float(p.pp_ld_max)
+        self.args.wheelbase = float(p.wheelbase)
+        self.args.pp_shift = float(p.pp_shift)
+        if self._pp_enabled and isinstance(self.controller, LaneKeepController):
+            self._rebuild_lane_keep_controller(mode=self.controller.mode)
+
+    def _rebuild_lane_keep_controller(self, mode: str) -> None:
+        self.controller = LaneKeepController(
+            mode=mode,
+            desired_speed=self.args.speed,
+            max_steer_deg=self.args.max_steer_deg,
+            wheelbase=self.args.wheelbase,
+            pp_k_dd=self.args.pp_k_dd,
+            pp_ld_min=self.args.pp_ld_min,
+            pp_ld_max=self.args.pp_ld_max,
+            pp_shift=self.args.pp_shift,
+            pd_la=self.args.pd_la,
+            pd_ky=self.args.pd_ky,
+            pd_kpsi=self.args.pd_kpsi,
+        )
+
+    def set_lane_source(self, source: str) -> None:
+        if source not in ("gt", "supercombo"):
+            return
+        self.args.lanes = source
+        if source == "supercombo" and self.supercombo is None:
+            self.supercombo = SupercomboBev(Path(self.args.supercombo_model))
+            if not self.supercombo._ensure():
+                print(f"WARNING: supercombo unavailable: {self.supercombo.error}")
+            else:
+                print(f"Supercombo → {self.supercombo.model_path}")
+        print(f"Lane source → {source}")
+
+    def set_pp_enabled(self, enabled: bool) -> None:
+        self._pp_enabled = bool(enabled)
+        if not enabled:
+            self.controller = SimpleController(desired_speed=self.args.speed)
+            print("Controller → straight (PP off)")
+            return
+        mode = self.args.controller if self.args.controller != "straight" else "pure_pursuit"
+        self._rebuild_lane_keep_controller(mode=mode)
+        print(f"Controller → {mode}")
 
     def _to_uint8(self, img: np.ndarray) -> np.ndarray:
         if img.dtype == np.uint8:
@@ -474,15 +570,19 @@ class MetaDriveSimulator:
         )
 
         if (self.args.draw_supercombo or self.args.lanes == "supercombo") and sc is not None:
-            draw_supercombo_overlay(
-                bgr,
-                sc,
-                geom,
-                w,
-                h,
-                y_sign=-1.0,
-                min_lane_prob=self.args.min_lane_prob,
-            )
+            draw_sc = True
+            if self._ui is not None:
+                draw_sc = self._ui.draw_supercombo()
+            if draw_sc:
+                draw_supercombo_overlay(
+                    bgr,
+                    sc,
+                    geom,
+                    w,
+                    h,
+                    y_sign=-1.0,
+                    min_lane_prob=self.args.min_lane_prob,
+                )
         elif sc is None and self.supercombo is not None and self.supercombo.error:
             cv2.putText(
                 bgr,
@@ -501,8 +601,16 @@ class MetaDriveSimulator:
                 gt_poly = self._last_gt_cmp.gt_poly
                 gt_lk = self._last_gt_cmp.lk_gt
             draw_lanes = None
-            if self.args.draw_gt_lanes:
+            want_gt = self.args.draw_gt_lanes
+            if self._ui is not None:
+                want_gt = self._ui.draw_gt_lanes()
+            if want_gt:
                 draw_lanes = gt_lanes if gt_lanes is not None else lanes
+            draw_bev = bool(self.args.bev)
+            draw_footer = True
+            if self._ui is not None:
+                draw_bev = self._ui.draw_bev()
+                draw_footer = False  # bag-style HUD
             bgr = draw_lane_keep_overlay(
                 bgr,
                 lk,
@@ -518,8 +626,8 @@ class MetaDriveSimulator:
                 roll_deg=self.roll_deg,
                 camera_height=self.camera_height,
                 waypoint_shift=self.args.pp_shift,
-                draw_bev=self.args.bev,
-                draw_footer=True,
+                draw_bev=draw_bev,
+                draw_footer=draw_footer,
                 geom=geom,
                 gt_poly=gt_poly,
                 gt_lk=gt_lk,
@@ -542,7 +650,7 @@ class MetaDriveSimulator:
         vp_tag = (
             "OK"
             if self.vp_calib.calibration_success
-            else (f"…{len(self.vp_calib.pitch_yaw_history)}/{self.vp_calib.history_len}")
+            else (f"…{self.vp_calib.history_pending}/{self.vp_calib.history_len}")
         )
         cv2.putText(
             bgr,
@@ -639,9 +747,51 @@ class MetaDriveSimulator:
                     row[k] = ""
         self._log_writer.writerow(row)
 
+    def _step_ekf(self, odometry: Dict[str, Any], steer_rad: float) -> Optional[np.ndarray]:
+        """Advance online EKF; return trajectory panel image if visualizing."""
+        if self.ekf_tracker is None:
+            return None
+        pos = odometry["position"]
+        gt_x, gt_y = float(pos[0]), float(pos[1])
+        gt_yaw = float(odometry["heading"])
+        yaw_rate = float(odometry.get("yaw_rate") or 0.0)
+        speed = float(odometry["speed"])
+
+        self.ekf_tracker.step(
+            gt_x=gt_x,
+            gt_y=gt_y,
+            gt_yaw=gt_yaw,
+            speed_mps=speed,
+            steer_rad=float(steer_rad),
+            yaw_rate=yaw_rate,
+            dt=self._sim_dt,
+        )
+        if not (self.args.show or self.args.overlay):
+            return None
+        panel = draw_trajectory_panel(self.ekf_tracker.buffers, size=480)
+        e_ekf, e_odom = self.ekf_tracker.position_errors()
+        if np.isfinite(e_ekf):
+            cv2.putText(
+                panel,
+                f"RMSE EKF={e_ekf:.2f}m  Odom={e_odom:.2f}m",
+                (8, panel.shape[0] - 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (220, 220, 220),
+                1,
+                cv2.LINE_AA,
+            )
+        return panel
+
     def run(self):
         try:
+            if self.args.show and not self.args.cv_show:
+                self._ui = SimLiveUi(self)
+
             while True:
+                if self._ui is not None and not self._ui.pump():
+                    break
+
                 obs_data = self.observation_parser.make_perception_data()
                 odometry = obs_data["odometry"]
                 gt_lanes = obs_data["lanes"]
@@ -653,6 +803,9 @@ class MetaDriveSimulator:
 
                 lanes = self._control_lanes(gt_lanes, sc)
                 lk, action = self._compute_control(odometry["speed"], lanes, sc)
+
+                steer_rad = float(lk.steer_rad) if lk is not None else 0.0
+                traj_img = self._step_ekf(odometry, steer_rad)
 
                 self._last_gt_cmp = None
                 if self.args.compare_gt and isinstance(self.controller, LaneKeepController):
@@ -681,8 +834,15 @@ class MetaDriveSimulator:
 
                     viz_img = self._make_viz_image(camera_image, lanes, lk, sc, gt_lanes=gt_lanes)
 
-                    if self.args.show:
+                    if self._ui is not None:
+                        status = self._status_line(odometry, lk, sc)
+                        self._ui.show_frame(viz_img, traj_img, status=status)
+                        if not self._ui.pump():
+                            break
+                    elif self.args.show:
                         cv2.imshow("MetaDrive | camera + PP", viz_img)
+                        if traj_img is not None:
+                            cv2.imshow("MetaDrive | trajectory", traj_img)
                         key = cv2.waitKey(1) & 0xFF
                         if key in (ord("q"), 27):
                             break
@@ -700,38 +860,14 @@ class MetaDriveSimulator:
                             self.out_dir,
                             overlay_img=viz_img if self.args.overlay else None,
                         )
+                        if traj_img is not None and self.args.overlay:
+                            cv2.imwrite(
+                                str(self.out_dir / f"traj_{self.frame:05d}.jpg"),
+                                traj_img,
+                            )
 
                 if self.frame % self.args.print_every == 0:
-                    steer_deg = np.rad2deg(lk.steer_rad) if lk else 0.0
-                    extra = ""
-                    if lk and lk.pure_pursuit is not None:
-                        extra = f" Ld={lk.pure_pursuit.lookahead_m:.1f}m"
-                    elif lk and lk.mode == "lateral_pd":
-                        extra = f" e_y={lk.e_y:.2f} e_psi={np.rad2deg(lk.e_psi):+.1f}°"
-                    sc_tag = ""
-                    if sc is not None:
-                        probs = ",".join(f"{l.prob:.2f}" for l in sc.lanes)
-                        sc_tag = f" sc_p=[{probs}]"
-                    vp_tag = (
-                        f" VP P={self.pitch_deg:.1f} Y={self.yaw_deg:.1f}"
-                        f"{' OK' if self.vp_calib.calibration_success else ''}"
-                    )
-                    cmp_tag = ""
-                    if self._last_gt_cmp is not None and np.isfinite(self._last_gt_cmp.path_bias):
-                        c = self._last_gt_cmp
-                        cmp_tag = (
-                            f" bias={c.path_bias:+.3f}m dδ={np.rad2deg(c.dsteer_rad):+.2f}°"
-                            f" ey={c.gt_ey:+.2f}"
-                        )
-                    print(
-                        f"Frame {self.frame}: pos=({odometry['position'][0]:.1f}, "
-                        f"{odometry['position'][1]:.1f}) "
-                        f"v={odometry['speed']:.1f} m/s "
-                        f"steer={steer_deg:+.1f}°{extra} "
-                        f"lanes={self.args.lanes} "
-                        f"L/R={len(lanes['left_road'])}/{len(lanes['right_road'])}"
-                        f"{sc_tag}{vp_tag}{cmp_tag}"
-                    )
+                    print(self._status_line(odometry, lk, sc, prefix=f"Frame {self.frame}: "))
 
                 self.env.step(action)
                 self.frame += 1
@@ -741,7 +877,74 @@ class MetaDriveSimulator:
         finally:
             self.cleanup()
 
+    def _status_line(
+        self,
+        odometry: Dict[str, Any],
+        lk: Optional[LaneKeepResult],
+        sc: Optional[SupercomboOut],
+        prefix: str = "",
+    ) -> str:
+        steer_deg = np.rad2deg(lk.steer_rad) if lk else 0.0
+        extra = ""
+        if lk and lk.pure_pursuit is not None:
+            extra = f" Ld={lk.pure_pursuit.lookahead_m:.1f}m"
+        elif lk and lk.mode == "lateral_pd":
+            extra = f" e_y={lk.e_y:.2f} e_psi={np.rad2deg(lk.e_psi):+.1f}°"
+        sc_tag = ""
+        if sc is not None:
+            probs = ",".join(f"{l.prob:.2f}" for l in sc.lanes)
+            sc_tag = f" sc_p=[{probs}]"
+        vp_tag = (
+            f" VP P={self.pitch_deg:.1f} Y={self.yaw_deg:.1f}"
+            f"{' OK' if self.vp_calib.calibration_success else ''}"
+        )
+        cmp_tag = ""
+        if self._last_gt_cmp is not None and np.isfinite(self._last_gt_cmp.path_bias):
+            c = self._last_gt_cmp
+            cmp_tag = (
+                f" bias={c.path_bias:+.3f}m dδ={np.rad2deg(c.dsteer_rad):+.2f}°"
+                f" ey={c.gt_ey:+.2f}"
+            )
+        ekf_tag = ""
+        if self.ekf_tracker is not None:
+            e_ekf, e_odom = self.ekf_tracker.position_errors()
+            if np.isfinite(e_ekf):
+                ekf_tag = f" ekf_rmse={e_ekf:.2f}m odom_rmse={e_odom:.2f}m"
+        return (
+            f"{prefix}pos=({odometry['position'][0]:.1f}, {odometry['position'][1]:.1f}) "
+            f"v={odometry['speed']:.1f} m/s "
+            f"steer={steer_deg:+.1f}°{extra} "
+            f"lanes={self.args.lanes}"
+            f"{sc_tag}{vp_tag}{cmp_tag}{ekf_tag}"
+        )
+
     def cleanup(self):
+        if self.ekf_tracker is not None and self.ekf_tracker.buffers.gt_x:
+            e_ekf, e_odom = self.ekf_tracker.position_errors()
+            print(
+                f"\n=== EKF trajectory ===\n"
+                f"  points={len(self.ekf_tracker.buffers.gt_x)}  "
+                f"RMSE EKF={e_ekf:.3f} m  Odom={e_odom:.3f} m"
+            )
+            try:
+                panel = draw_trajectory_panel(self.ekf_tracker.buffers, size=640)
+                out_img = self.out_dir / "trajectory_ekf.jpg"
+                cv2.imwrite(str(out_img), panel)
+                b = self.ekf_tracker.buffers
+                np.savez(
+                    self.out_dir / "trajectory_ekf.npz",
+                    gt_x=np.asarray(b.gt_x),
+                    gt_y=np.asarray(b.gt_y),
+                    odom_x=np.asarray(b.odom_x),
+                    odom_y=np.asarray(b.odom_y),
+                    ekf_x=np.asarray(b.ekf_x),
+                    ekf_y=np.asarray(b.ekf_y),
+                )
+                print(f"Trajectory → {out_img.resolve()}")
+                if self.ekf_tracker.ekf is not None:
+                    self.ekf_tracker.ekf.print_statistics()
+            except Exception as e:
+                print(f"WARNING: failed to save trajectory: {e}")
         if self._gt_acc is not None and self._gt_acc.path_bias:
             summary = self._gt_acc.summary()
             text = self._gt_acc.format_summary()
@@ -756,8 +959,17 @@ class MetaDriveSimulator:
             self._log_file.close()
             if self._log_path is not None:
                 print(f"Log → {self._log_path.resolve()}")
-        if self.args.show:
-            cv2.destroyAllWindows()
+        if self._ui is not None:
+            try:
+                self._ui.request_quit()
+            except Exception:
+                pass
+            self._ui = None
+        if self.args.show or self.args.traj:
+            try:
+                cv2.destroyAllWindows()
+            except Exception:
+                pass
         print("Closing environment...")
         self.env.close()
         print("Done.")
@@ -769,7 +981,37 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--show",
         action="store_true",
-        help="Live OpenCV window: camera + lane/PP overlay (q or Esc to quit)",
+        help="Live Tk UI (bag-style): camera + trajectory + RPY/PP sliders",
+    )
+    p.add_argument(
+        "--cv-show",
+        action="store_true",
+        help="Use OpenCV windows instead of Tk (legacy; with --show)",
+    )
+    p.add_argument(
+        "--traj",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Top-down GT / bicycle-odom / EKF trajectory (bag-style). Default on. "
+        "Disable with --no-traj.",
+    )
+    p.add_argument(
+        "--ekf-gps-interval",
+        type=float,
+        default=0.2,
+        help="Seconds between EKF GPS updates (MetaDrive pose as GPS)",
+    )
+    p.add_argument(
+        "--ekf-gps-noise",
+        type=float,
+        default=0.5,
+        help="EKF GPS measurement noise σ (m) used in R_gps",
+    )
+    p.add_argument(
+        "--ekf-gps-meas-noise",
+        type=float,
+        default=0.0,
+        help="Optional noise added to GT pose before GPS update (m, 0=perfect GPS)",
     )
     p.add_argument(
         "--controller",

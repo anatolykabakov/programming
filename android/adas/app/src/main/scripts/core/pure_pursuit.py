@@ -1,80 +1,19 @@
 #!/usr/bin/env python3
-"""AAD pure pursuit + get_target_point (Algorithms-for-Automated-Driving).
+"""Pure pursuit — C++ ``pyadas.PurePursuit`` + Python viz helpers.
 
-Reference:
-  ``code/solutions/control/get_target_point.py``
-  ``code/solutions/control/pure_pursuit.py``
+Algorithm lives in C++ (``utils/pure_pursuit``). This module wraps the result
+type and drawing utilities for bag/sim visualizers.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
 
 from .lane_projection import CameraGeometry, project_iso_xyz
-
-
-def circle_line_segment_intersection(
-    circle_center,
-    circle_radius,
-    pt1,
-    pt2,
-    full_line: bool = True,
-    tangent_tol: float = 1e-9,
-):
-    """Intersections of a circle with a line segment (StackOverflow / AAD)."""
-    (p1x, p1y), (p2x, p2y), (cx, cy) = pt1, pt2, circle_center
-    (x1, y1), (x2, y2) = (p1x - cx, p1y - cy), (p2x - cx, p2y - cy)
-    dx, dy = (x2 - x1), (y2 - y1)
-    dr = (dx**2 + dy**2) ** 0.5
-    if dr < 1e-12:
-        return []
-    big_d = x1 * y2 - x2 * y1
-    discriminant = circle_radius**2 * dr**2 - big_d**2
-
-    if discriminant < 0:
-        return []
-    intersections = [
-        (
-            cx + (big_d * dy + sign * (-1 if dy < 0 else 1) * dx * discriminant**0.5) / dr**2,
-            cy + (-big_d * dx + sign * abs(dy) * discriminant**0.5) / dr**2,
-        )
-        for sign in ((1, -1) if dy < 0 else (-1, 1))
-    ]
-    if not full_line:
-        fraction_along_segment = [
-            (xi - p1x) / dx if abs(dx) > abs(dy) else (yi - p1y) / dy for xi, yi in intersections
-        ]
-        intersections = [
-            pt for pt, frac in zip(intersections, fraction_along_segment) if 0 <= frac <= 1
-        ]
-    if len(intersections) == 2 and abs(discriminant) <= tangent_tol:
-        return [intersections[0]]
-    return intersections
-
-
-def get_target_point(lookahead: float, polyline: np.ndarray) -> Optional[np.ndarray]:
-    """AAD ``get_target_point``: first forward intersection with lookahead circle.
-
-    Circle center is (0, 0). Returns (x, y) with x > 0, or None.
-    """
-    polyline = np.asarray(polyline, dtype=np.float64)
-    if polyline.ndim != 2 or polyline.shape[0] < 2:
-        return None
-    intersections = []
-    for j in range(len(polyline) - 1):
-        pt1 = polyline[j]
-        pt2 = polyline[j + 1]
-        intersections += circle_line_segment_intersection(
-            (0, 0), lookahead, pt1, pt2, full_line=False
-        )
-    filtered = [p for p in intersections if p[0] > 0]
-    if not filtered:
-        return None
-    return np.asarray(filtered[0], dtype=np.float64)
 
 
 @dataclass
@@ -119,32 +58,28 @@ class PurePursuit:
         self.ld_max = float(ld_max)
 
     def compute(self, polyline_ego: np.ndarray, speed_mps: float) -> PurePursuitResult:
-        """``polyline_ego``: Nx2 in camera/ego frame (X forward, Y left)."""
-        poly = np.asarray(polyline_ego, dtype=np.float64).copy()
-        speed = max(0.0, float(speed_mps))
-        ld = float(np.clip(self.K_dd * speed, self.ld_min, self.ld_max))
+        """``polyline_ego``: Nx2 in camera/ego frame (X forward, Y left). C++ only."""
+        from .native import require_cpp
 
-        # Shift so origin is rear axle (AAD)
-        poly_ra = poly.copy()
-        poly_ra[:, 0] += self.waypoint_shift
-        target_ra = get_target_point(ld, poly_ra)
-        alpha = 0.0
-        steer = 0.0
+        cpp = require_cpp()
+        poly = np.asarray(polyline_ego, dtype=np.float64)
+        pairs = [(float(x), float(y)) for x, y in poly]
+        backend = cpp.PurePursuit(
+            self.K_dd, self.wheel_base, self.waypoint_shift, self.ld_min, self.ld_max
+        )
+        r = backend.compute(pairs, float(speed_mps))
+        target_ra = None
         target_ego = None
-        if target_ra is not None:
-            alpha = float(np.arctan2(target_ra[1], target_ra[0]))
-            steer = float(np.arctan((2.0 * self.wheel_base * np.sin(alpha)) / max(ld, 1e-3)))
-            target_ego = np.array(
-                [target_ra[0] - self.waypoint_shift, target_ra[1]], dtype=np.float64
-            )
-
+        if r.has_target:
+            target_ego = np.array([r.target_x, r.target_y], dtype=np.float64)
+            target_ra = np.array([r.target_x + self.waypoint_shift, r.target_y], dtype=np.float64)
         return PurePursuitResult(
-            lookahead_m=ld,
+            lookahead_m=float(r.lookahead_m),
             target_ra=target_ra,
             target_ego=target_ego,
-            alpha_rad=alpha,
-            steer_rad=steer,
-            speed_mps=speed,
+            alpha_rad=float(r.alpha_rad),
+            steer_rad=float(r.steer_rad),
+            speed_mps=float(r.speed_mps),
             polyline_ego=poly,
             wheel_base=self.wheel_base,
         )

@@ -45,6 +45,7 @@ CLEAN_BUILD=false
 VERBOSE=false
 BUILD_TARGET="android"  # android or linux
 BUILD_TESTS=false       # build tests
+BUILD_PYTHON=false      # pyadas pybind11 module (linux only)
 
 # Функция показа справки
 show_help() {
@@ -58,6 +59,7 @@ show_help() {
     echo "  -c, --clean             Очистить перед сборкой"
     echo "  -v, --verbose           Подробный вывод"
     echo "  --test                  Собрать и запустить тесты (только для Linux)"
+    echo "  --python                Собрать pyadas (pybind11) для sim/vis (только Linux)"
     echo "  -h, --help              Показать эту справку"
     echo
     echo "Env: ANDROID_NDK_ROOT / ANDROID_NDK_HOME, BUILDOZER_PLATFORM"
@@ -65,6 +67,7 @@ show_help() {
     echo "ПРИМЕРЫ:"
     echo "  $0                      # Сборка для Android arm64-v8a"
     echo "  $0 -t linux             # Сборка для Linux"
+    echo "  $0 -t linux --python    # Linux + pyadas → scripts/pyadas/"
     echo "  $0 -t android -c -v     # Очистка и подробная сборка Android"
     echo "  $0 -t linux --test      # Сборка и запуск тестов для Linux"
 }
@@ -99,6 +102,10 @@ parse_arguments() {
                 ;;
             --test)
                 BUILD_TESTS=true
+                shift
+                ;;
+            --python)
+                BUILD_PYTHON=true
                 shift
                 ;;
             -h|--help)
@@ -221,6 +228,9 @@ conan_install() {
         if [ "$BUILD_TESTS" = true ]; then
             args+=(-o "&:tests=True")
         fi
+        if [ "$BUILD_PYTHON" = true ]; then
+            args+=(-o "&:python_bindings=True")
+        fi
     fi
 
     print_status "Conan install ($BUILD_TARGET)..."
@@ -279,6 +289,12 @@ build_linux() {
     else
         cmake_args+=(-DBUILD_TESTING=OFF)
         print_status "  - Build Testing: OFF"
+    fi
+    if [ "$BUILD_PYTHON" = true ]; then
+        cmake_args+=(-DBUILD_PYTHON_BINDINGS=ON)
+        print_status "  - Python bindings (pyadas): ON"
+    else
+        cmake_args+=(-DBUILD_PYTHON_BINDINGS=OFF)
     fi
 
     cmake "${cmake_args[@]}" -B "$BUILD_DIR" -S .
@@ -425,6 +441,7 @@ show_build_info() {
     echo "  - Build Type: $BUILD_TYPE"
     echo "  - Clean Build: $CLEAN_BUILD"
     echo "  - Verbose: $VERBOSE"
+    echo "  - Python bindings: $BUILD_PYTHON"
     echo "  - Build Dir: $CPP_DIR/$BUILD_DIR"
     echo "  - Deps: Conan (conanfile.py)"
     echo
@@ -433,6 +450,18 @@ show_build_info() {
 # Основная функция
 main() {
     parse_arguments "$@"
+
+    # Keep Android and Linux outputs separate (android uses build/).
+    if [ "$BUILD_TARGET" = "linux" ]; then
+        BUILD_DIR="build-linux"
+    else
+        BUILD_DIR="build"
+    fi
+
+    if [ "$BUILD_PYTHON" = true ] && [ "$BUILD_TARGET" != "linux" ]; then
+        print_error "--python только для -t linux"
+        exit 1
+    fi
 
     echo "=========================================="
     echo "  Сборка C++ части проекта ADAS (Conan)"

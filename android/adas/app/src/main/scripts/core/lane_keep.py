@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Shared lane keeping for interactive visualizer and MetaDrive sim."""
+"""Lane keeping for bag/sim visualizers.
+
+``pure_pursuit`` mode uses C++ ``LaneKeepService`` / ``PurePursuit``.
+``lateral_pd`` / ``straight`` remain Python (sim/viz only; not in Android C++).
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,8 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from .pure_pursuit import PurePursuit, PurePursuitResult
+from .native import NativeLaneKeep
+from .pure_pursuit import PurePursuitResult
 
 
 @dataclass(frozen=True)
@@ -140,12 +145,19 @@ class LaneKeepController:
         self.desired_speed = float(desired_speed)
         self.max_steer_rad = float(np.deg2rad(max_steer_deg))
         self.wheelbase = float(wheelbase)
-        self.pp = PurePursuit(
-            K_dd=pp_k_dd,
-            wheel_base=wheelbase,
-            waypoint_shift=pp_shift,
-            ld_min=pp_ld_min,
-            ld_max=pp_ld_max,
+        self._pp_shift = float(pp_shift)
+        self._native: Optional[NativeLaneKeep] = (
+            NativeLaneKeep(
+                wheelbase=wheelbase,
+                desired_speed=desired_speed,
+                max_steer_deg=max_steer_deg,
+                pp_k_dd=pp_k_dd,
+                pp_ld_min=pp_ld_min,
+                pp_ld_max=pp_ld_max,
+                pp_shift=pp_shift,
+            )
+            if mode == "pure_pursuit"
+            else None
         )
         self.pd_la = float(pd_la)
         self.pd_ky = float(pd_ky)
@@ -155,7 +167,7 @@ class LaneKeepController:
 
     @property
     def waypoint_shift(self) -> float:
-        return float(self.pp.waypoint_shift)
+        return self._pp_shift
 
     def _speed_action(self, speed_mps: float) -> tuple[float, float]:
         err = self.desired_speed - max(0.0, float(speed_mps))
@@ -170,29 +182,24 @@ class LaneKeepController:
             return 0.0
         return float(np.clip(steer_rad / self.max_steer_rad, -1.0, 1.0))
 
-    def _compute_steer_from_polyline(
-        self,
-        poly: np.ndarray,
-        speed_mps: float,
-    ) -> tuple[float, float, float, float, Optional[PurePursuitResult]]:
-        steer_rad = 0.0
-        e_y = e_psi = curv = 0.0
-        pp_result: Optional[PurePursuitResult] = None
-
-        if self.mode == "pure_pursuit":
-            pp_result = self.pp.compute(poly, speed_mps)
-            steer_rad = float(pp_result.steer_rad)
-            curv = float(pp_result.curvature)
-        elif self.mode == "lateral_pd":
-            steer_rad, e_y, e_psi, curv = lateral_pd_steer_rad(
-                poly,
-                speed_mps,
-                lookahead_m=self.pd_la,
-                ky=self.pd_ky,
-                kpsi=self.pd_kpsi,
-                wheelbase=self.wheelbase,
-            )
-        return steer_rad, e_y, e_psi, curv, pp_result
+    def _pp_result_from_native(
+        self, out: Any, poly: np.ndarray, speed_mps: float
+    ) -> PurePursuitResult:
+        target_ego = None
+        target_ra = None
+        if getattr(out, "has_target", False):
+            target_ego = np.array([out.target_x, out.target_y], dtype=np.float64)
+            target_ra = np.array([out.target_x + self._pp_shift, out.target_y], dtype=np.float64)
+        return PurePursuitResult(
+            lookahead_m=float(out.lookahead_m),
+            target_ra=target_ra,
+            target_ego=target_ego,
+            alpha_rad=0.0,
+            steer_rad=float(out.steer_rad),
+            speed_mps=float(speed_mps),
+            polyline_ego=poly,
+            wheel_base=self.wheelbase,
+        )
 
     def compute_from_polyline(
         self,
@@ -229,7 +236,32 @@ class LaneKeepController:
             self.last_result = result
             return result
 
-        steer_rad, e_y, e_psi, curv, pp_result = self._compute_steer_from_polyline(poly, speed_mps)
+        if self.mode == "pure_pursuit":
+            assert self._native is not None
+            out = self._native.step(speed_mps, poly)
+            result = LaneKeepResult(
+                mode=self.mode,
+                steer_rad=float(out.steer_rad),
+                steer_norm=float(out.steer_norm),
+                throttle=float(out.throttle),
+                brake=float(out.brake),
+                polyline=poly,
+                curvature=float(out.curvature),
+                pure_pursuit=self._pp_result_from_native(out, poly, speed_mps),
+                status=str(out.status),
+            )
+            self.last_result = result
+            return result
+
+        # lateral_pd (Python-only viz/sim mode)
+        steer_rad, e_y, e_psi, curv = lateral_pd_steer_rad(
+            poly,
+            speed_mps,
+            lookahead_m=self.pd_la,
+            ky=self.pd_ky,
+            kpsi=self.pd_kpsi,
+            wheelbase=self.wheelbase,
+        )
         result = LaneKeepResult(
             mode=self.mode,
             steer_rad=steer_rad,
@@ -240,7 +272,6 @@ class LaneKeepController:
             e_y=e_y,
             e_psi=e_psi,
             curvature=curv,
-            pure_pursuit=pp_result,
             status="ok",
         )
         self.last_result = result

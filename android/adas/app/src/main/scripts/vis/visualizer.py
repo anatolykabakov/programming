@@ -25,8 +25,8 @@ import matplotlib
 matplotlib.use("Agg")
 
 from vis.android_bag_player import AndroidBagPlayer
-from vis.gps_utils import calculate_initial_heading_from_gps, gps_to_local_coords
-from vis.imu_utils import process_imu_for_odometry
+from core.gps_utils import calculate_initial_heading_from_gps, gps_to_local_coords
+from core.imu_utils import process_imu_for_odometry
 from vis.plotting import plot_trajectory
 from vis.trajectory_calculators import (
     calculate_trajectory,

@@ -17,8 +17,9 @@ from typing import List, Tuple
 import numpy as np
 
 from core.vehicle_model import VehicleModel, normalize_angle
-from vis.ekf import VehicleEKF
-from vis.gps_utils import gps_to_local_coords
+from core.ekf import VehicleEKF
+from core.gps_utils import gps_to_local_coords
+from core.online_localizer import OnlineLocalizer
 
 
 def calculate_trajectory_imu(
@@ -686,136 +687,62 @@ def calculate_trajectory_ekf(
     gps_update_interval: float = 1.0,
     imu_update_interval: float = 0.01,
 ) -> Tuple[np.ndarray, np.ndarray, VehicleEKF]:
+    """EKF trajectory via streaming ``OnlineLocalizer.step`` (bag / offline wrapper).
+
+    Same architecture as live: predict(odom) → update_imu → update_gps on interval.
+    ``alpha_imu`` / ``imu_update_interval`` kept for API compatibility; IMU is
+    applied each wheel tick when a yaw_rate sample is available.
     """
-    Вычисляет траекторию с использованием Extended Kalman Filter (EKF).
+    _ = alpha_imu, imu_update_interval  # API compat
 
-    Метод (правильная архитектура - без "information incest"):
-    1. Prediction (100Hz): Bicycle model с ТОЛЬКО одометрией (steering angle)
-    2. Update GPS (1Hz): Коррекция позиции (x, y) с адаптивным Kalman gain
-    3. Update IMU (100Hz): Коррекция yaw_rate по IMU
-
-    ВАЖНО: IMU используется ТОЛЬКО в update, не в prediction!
-    Это предотвращает двойное использование данных IMU.
-
-    Преимущества:
-      ✅ Быстрая конвергенция в начале (большой Kalman gain)
-      ✅ Малая коррекция при стабильном состоянии (малый gain)
-      ✅ Автоматическое отклонение GPS аномалий
-      ✅ Правильное разделение источников данных
-      ✅ Оптимальное объединение всех датчиков
-
-    Args:
-        wheel: Список данных колес [[timestamp, vr, vl, hr, hl], ...]
-        steering: Список данных руля [[timestamp, angle_abs, sign], ...]
-        gear: Список данных передач [[timestamp, gear_name, gear_value], ...]
-        imu_yaw_rate: numpy array (N,) - угловая скорость из IMU
-        imu_timestamps: numpy array (N,) - timestamps IMU
-        gps_data: numpy array (M, 5) [timestamp, lat, lon, alt, speed]
-        wheelbase: Колесная база в метрах
-        initial_yaw: Начальная ориентация в радианах
-        alpha_imu: (не используется, оставлен для совместимости API)
-        gps_update_interval: интервал GPS update (секунды)
-        imu_update_interval: интервал IMU update (секунды)
-
-    Returns:
-        Tuple (x_array, y_array, ekf) - координаты траектории и EKF объект
-
-    Пример:
-        x, y, ekf = calculate_trajectory_ekf(
-            wheel, steering, gear, imu_yaw_rate, imu_timestamps, gps_data,
-            gps_update_interval=1.0,  # GPS каждую секунду
-            imu_update_interval=0.01   # IMU каждые 10мс
-        )
-    """
-
-    # Инициализация EKF
-    ekf = VehicleEKF(
-        initial_x=0.0,
-        initial_y=0.0,
-        initial_yaw=initial_yaw,
-        initial_v=0.0,
-        initial_yaw_rate=0.0,
-        wheelbase=wheelbase,
-        # Шум процесса (настройте под свои данные)
-        process_noise_pos=0.1,  # м
-        process_noise_yaw=0.01,  # рад
-        process_noise_v=0.5,  # м/с
-        process_noise_yaw_rate=0.05,  # рад/с
-        # Шум измерений
-        gps_noise_pos=5.0,  # м (GPS точность)
-        imu_noise_yaw_rate=0.02,  # рад/с (IMU точность)
-        # Начальная неопределенность (большая → быстро доверяем измерениям)
-        initial_pos_uncertainty=10.0,  # м
-        initial_yaw_uncertainty=0.5,  # рад (~30°)
-        initial_v_uncertainty=2.0,  # м/с
-        initial_yaw_rate_uncertainty=0.1,  # рад/с
-    )
-
-    wheel_array = np.array(wheel)
+    wheel_array = np.asarray(wheel, dtype=np.float64)
     if len(wheel_array) < 2:
-        return np.array([0]), np.array([0]), ekf
+        loc = OnlineLocalizer(wheelbase=wheelbase, gps_update_interval=gps_update_interval)
+        loc.reset(yaw=initial_yaw)
+        assert loc.ekf is not None
+        return np.array([0.0]), np.array([0.0]), loc.ekf
 
-    # Конвертируем GPS в локальные координаты
     x_gps, y_gps = gps_to_local_coords(gps_data, origin_idx=0)
-    gps_timestamps = gps_data[:, 0]
+    gps_timestamps = np.asarray(gps_data[:, 0], dtype=np.float64)
 
-    # Подготовка данных руля и передач
     if steering is not None and len(steering) > 0:
-        steering_array = np.array(steering)
+        steering_array = np.asarray(steering, dtype=np.float64)
         steering_timestamps = steering_array[:, 0].astype(int).tolist()
         steering_values = steering_array[:, 1:]
     else:
         steering_timestamps = []
-        steering_values = np.array([])
+        steering_values = np.empty((0, 2))
 
     if gear is not None and len(gear) > 0:
-        gear_array = np.array(gear, dtype=object)
         gear_timestamps = [int(g[0]) for g in gear]
         gear_names = [g[1] for g in gear]
     else:
         gear_timestamps = []
         gear_names = []
 
-    # Предварительное выделение массивов
-    n = len(wheel_array)
-    x_arr = np.zeros(n)
-    y_arr = np.zeros(n)
+    loc = OnlineLocalizer(
+        wheelbase=wheelbase,
+        gps_noise_pos=5.0,
+        gps_update_interval=gps_update_interval,
+        imu_every_step=True,
+    )
+    loc.reset(x=0.0, y=0.0, yaw=initial_yaw)
 
     timestamps = wheel_array[:, 0]
-    dt_arr = np.diff(timestamps) / 1e3  # секунды
+    dt_arr = np.diff(timestamps) / 1e3
     valid_indices = np.where(dt_arr >= 0.0001)[0] + 1
+    unit_to_deg = 32.72 / 400.0
 
-    result_idx = 0
-    last_gps_update_time = timestamps[0]
-    last_imu_update_time = timestamps[0]
-
-    print(f"\n{'='*60}")
-    print("🎯 EKF ОБРАБОТКА (правильная архитектура)")
-    print(f"{'='*60}")
-    print(f"Обработка {len(valid_indices)} точек траектории...")
-    print(f"  Архитектура:")
-    print(f"    Prediction:       ТОЛЬКО одометрия (steering)")
-    print(f"    Update GPS:       коррекция позиции (x, y)")
-    print(f"    Update IMU:       коррекция yaw_rate")
-    print(f"  Параметры:")
-    print(f"    Wheelbase:        {wheelbase:.3f} м")
-    print(f"    GPS update:       каждые {gps_update_interval:.1f}с")
-    print(f"    IMU update:       каждые {imu_update_interval*1000:.0f}мс")
-    print(f"  Данные:")
-    print(f"    GPS точек:        {len(gps_timestamps)}")
-    print(f"    IMU точек:        {len(imu_timestamps)}")
-    print(f"{'='*60}\n")
+    xs: List[float] = []
+    ys: List[float] = []
+    print(f"EKF online: {len(valid_indices)} steps  gps_dt={gps_update_interval}s")
 
     for i in valid_indices:
         t = int(timestamps[i])
         vr, vl, hr, hl = wheel_array[i, 1:5]
-        dt = dt_arr[i - 1]
+        dt = float(dt_arr[i - 1])
+        v = ((vr + vl + hr + hl) / 4.0) / 3.6
 
-        # Скорость автомобиля
-        v_kmh = (vr + vl + hr + hl) / 4.0
-        v = v_kmh / 3.6  # км/ч → м/с
-
-        # Получаем угол руля и передачу
         steering_angle_abs = 0.0
         steering_angle_sign = 0.0
         if steering_timestamps:
@@ -826,79 +753,60 @@ def calculate_trajectory_ekf(
                 steering_timestamps[idx] - t
             ):
                 idx -= 1
-            steering_angle_abs = steering_values[idx, 0]
-            steering_angle_sign = steering_values[idx, 1]
+            steering_angle_abs = float(steering_values[idx, 0])
+            steering_angle_sign = float(steering_values[idx, 1])
 
-        current_gear_name = "DRIVE"
+        gear_name = "DRIVE"
         if gear_timestamps:
             idx = bisect.bisect_left(gear_timestamps, t)
             if idx >= len(gear_timestamps):
                 idx = len(gear_timestamps) - 1
             elif idx > 0 and abs(gear_timestamps[idx - 1] - t) < abs(gear_timestamps[idx] - t):
                 idx -= 1
-            current_gear_name = gear_names[idx]
+            gear_name = gear_names[idx]
 
-        # Вычисляем угол руля
-        steering_angle_deg = steering_angle_abs * 0.0122  # unit_to_degrees
+        steer_deg = steering_angle_abs * unit_to_deg
         if steering_angle_sign != 0:
-            steering_angle_deg = -steering_angle_deg
-        steering_angle_rad = np.radians(steering_angle_deg)
+            steer_deg = -steer_deg
+        steer_rad = float(np.radians(steer_deg))
+        if gear_name == "REVERSE":
+            v = -v
 
-        # Направление движения
-        direction = -1.0 if current_gear_name == "REVERSE" else 1.0
-        v_directed = v * direction
-
-        # Получаем IMU yaw_rate (интерполяция)
+        # IMU yaw_rate at wheel time
         idx = bisect.bisect_left(imu_timestamps, t)
         if idx >= len(imu_yaw_rate):
             idx = len(imu_yaw_rate) - 1
         elif idx > 0 and idx < len(imu_timestamps):
             t1, t2 = imu_timestamps[idx - 1], imu_timestamps[idx]
             if t2 != t1:
-                alpha_interp = (t - t1) / (t2 - t1)
-                yaw_rate_imu = (
-                    imu_yaw_rate[idx - 1] * (1 - alpha_interp) + imu_yaw_rate[idx] * alpha_interp
-                )
+                a = (t - t1) / (t2 - t1)
+                yaw_rate = float(imu_yaw_rate[idx - 1] * (1 - a) + imu_yaw_rate[idx] * a)
             else:
-                yaw_rate_imu = imu_yaw_rate[idx]
+                yaw_rate = float(imu_yaw_rate[idx])
         else:
-            yaw_rate_imu = imu_yaw_rate[idx]
+            yaw_rate = float(imu_yaw_rate[idx])
 
-        # ===== PREDICTION STEP (только одометрия) =====
-        ekf.predict(v_measured=v_directed, steering_angle=steering_angle_rad, dt=dt)
+        gps_idx = bisect.bisect_left(gps_timestamps, t)
+        if gps_idx >= len(gps_timestamps):
+            gps_idx = len(gps_timestamps) - 1
+        elif gps_idx > 0 and abs(gps_timestamps[gps_idx - 1] - t) < abs(
+            gps_timestamps[gps_idx] - t
+        ):
+            gps_idx -= 1
+        gps_xy = (float(x_gps[gps_idx]), float(y_gps[gps_idx]))
 
-        # ===== GPS UPDATE (периодически) =====
-        time_since_gps = (t - last_gps_update_time) / 1000.0
-        if time_since_gps >= gps_update_interval:
-            # Находим ближайшую GPS точку
-            gps_idx = bisect.bisect_left(gps_timestamps, t)
-            if gps_idx >= len(gps_timestamps):
-                gps_idx = len(gps_timestamps) - 1
-            elif gps_idx > 0:
-                if abs(gps_timestamps[gps_idx - 1] - t) < abs(gps_timestamps[gps_idx] - t):
-                    gps_idx = gps_idx - 1
+        ex, ey, _ = loc.step(
+            dt=dt,
+            speed_mps=v,
+            steer_rad=steer_rad,
+            yaw_rate=yaw_rate,
+            gps_xy=gps_xy,
+            ref_xy=gps_xy,
+        )
+        xs.append(ex)
+        ys.append(ey)
 
-            # Применяем GPS update
-            gps_applied = ekf.update_gps(x_gps[gps_idx], y_gps[gps_idx], max_innovation=50.0)
-
-            if gps_applied:
-                last_gps_update_time = t
-
-        # ===== IMU UPDATE (периодически) =====
-        time_since_imu = (t - last_imu_update_time) / 1000.0
-        if time_since_imu >= imu_update_interval:
-            ekf.update_imu(yaw_rate_imu)
-            last_imu_update_time = t
-
-        # Сохраняем позицию
-        x_current, y_current = ekf.get_position()
-        x_arr[result_idx] = x_current
-        y_arr[result_idx] = y_current
-        result_idx += 1
-
-    # Статистика EKF
-    ekf.print_statistics()
-
-    print(f"\nEKF траектория: {result_idx} точек")
-
-    return x_arr[:result_idx], y_arr[:result_idx], ekf
+    assert loc.ekf is not None
+    loc.ekf.print_statistics()
+    print(f"EKF trajectory: {len(xs)} pts")
+    return np.asarray(xs), np.asarray(ys), loc.ekf

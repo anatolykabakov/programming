@@ -31,45 +31,7 @@ from typing import Any, List, Optional, Tuple
 import cv2
 import numpy as np
 
-# openpilot-style longitudinal sample grid (m)
-X_IDXS = np.array(
-    [
-        0.0,
-        0.1875,
-        0.75,
-        1.6875,
-        3.0,
-        4.6875,
-        6.75,
-        9.1875,
-        12.0,
-        15.1875,
-        18.75,
-        22.6875,
-        27.0,
-        31.6875,
-        36.75,
-        42.1875,
-        48.0,
-        54.1875,
-        60.75,
-        67.6875,
-        75.0,
-        82.6875,
-        90.75,
-        99.1875,
-        108.0,
-        117.1875,
-        126.75,
-        136.6875,
-        147.0,
-        157.6875,
-        168.75,
-        180.1875,
-        192.0,
-    ],
-    dtype=np.float64,
-)
+from .supercombo_parse import X_IDXS
 
 
 @dataclass

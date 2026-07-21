@@ -11,6 +11,9 @@ import "camera_intrinsics.proto";
 import "lanes.proto";
 import "car_state.proto";
 import "steer.proto";
+import "lane_keep.proto";
+import "localization.proto";
+import "camera_calib.proto";
 
 // Main message wrapper for ZMQ
 message ZMQMessage {
@@ -28,5 +31,10 @@ message ZMQMessage {
         LaneLines lane_lines = 14;
         CarState car_state = 15;
         SteerCommand steer_command = 16;
+        LaneKeepState lane_keep = 17;
+        LocalizationPose localization_pose = 18;
+        CameraCalibrationState camera_calib = 19;
+        LaneUv lane_uv = 20;
+        CameraOdometry camera_odometry = 21;
     }
 }
