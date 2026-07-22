@@ -152,7 +152,15 @@ public class AdasAppHandler extends Service {
             }
             pandaConnection = null;
         }
-        nativeStarted = false;
+
+        if (nativeStarted) {
+            try {
+                nativeStop();
+            } catch (UnsatisfiedLinkError e) {
+                Log.w(TAG, "nativeStop unavailable", e);
+            }
+            nativeStarted = false;
+        }
 
         Intent zmqIntent = new Intent(this, ZMQBridgeService.class);
         stopService(zmqIntent);

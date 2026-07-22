@@ -11,6 +11,7 @@ import org.zeromq.ZMQ.Poller;
 import org.zeromq.ZMQ.Socket;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -21,20 +22,32 @@ import ai.flow.adas.Messages.ZMQMessage;
 /**
  * Java side of the native ZmqBridgeService.
  *
- * Two endpoints only:
- *   IN  tcp://127.0.0.1:5555 — connect PUB  (sensors / commands → native SUB)
- *   OUT tcp://127.0.0.1:5556 — connect SUB  (native PUB → bag logger)
+ * Endpoints from {@code assets/config.json} → {@code zmq.endpoint_in/out}
+ * (defaults tcp://127.0.0.1:5555 / :5556).
  *
  * Multipart: [topic UTF-8][ZMQMessage protobuf].
+ *
+ * JeroMQ sockets are not thread-safe: all pubIn sends run on {@link #zmqExecutor}
+ * via {@link #inboundQueue}; subOut is only touched in {@link #messageLoop}.
  */
 public class ZMQBridgeService extends Service {
     private static final String TAG = "ZMQBridgeService";
 
-    public static final String ENDPOINT_IN = "tcp://127.0.0.1:5555";
-    public static final String ENDPOINT_OUT = "tcp://127.0.0.1:5556";
+    private static final String DEFAULT_ENDPOINT_IN = "tcp://127.0.0.1:5555";
+    private static final String DEFAULT_ENDPOINT_OUT = "tcp://127.0.0.1:5556";
 
     private static final AtomicReference<ZMQBridgeService> INSTANCE = new AtomicReference<>();
     private static final AtomicReference<OutboundListener> OUTBOUND_LISTENER = new AtomicReference<>();
+
+    private static final class InboundFrame {
+        final byte[] topic;
+        final byte[] body;
+
+        InboundFrame(byte[] topic, byte[] body) {
+            this.topic = topic;
+            this.body = body;
+        }
+    }
 
     /** Live UI / debug sink for native → Java outbound messages (lane_keep, steer, …). */
     public interface OutboundListener {
@@ -50,7 +63,10 @@ public class ZMQBridgeService extends Service {
     private Socket subOut;
     private Poller poller;
     private ExecutorService zmqExecutor;
+    private final ConcurrentLinkedQueue<InboundFrame> inboundQueue = new ConcurrentLinkedQueue<>();
     private volatile boolean isRunning = false;
+    private String endpointIn = DEFAULT_ENDPOINT_IN;
+    private String endpointOut = DEFAULT_ENDPOINT_OUT;
 
     public static ZMQBridgeService getInstance() {
         return INSTANCE.get();
@@ -89,7 +105,7 @@ public class ZMQBridgeService extends Service {
             zmqExecutor = Executors.newSingleThreadExecutor();
             zmqExecutor.submit(this::messageLoop);
             isRunning = true;
-            Log.i(TAG, "ZMQ Bridge started (PUB→" + ENDPOINT_IN + ", SUB←" + ENDPOINT_OUT + ")");
+            Log.i(TAG, "ZMQ Bridge started (PUB→" + endpointIn + ", SUB←" + endpointOut + ")");
         } catch (Exception e) {
             Log.e(TAG, "Error starting ZMQ Bridge", e);
         }
@@ -124,20 +140,26 @@ public class ZMQBridgeService extends Service {
     }
 
     private void setupZMQ() {
+        AdasConfig cfg = AdasConfig.load(this);
+        endpointIn = (cfg.zmqEndpointIn != null && !cfg.zmqEndpointIn.isEmpty())
+                ? cfg.zmqEndpointIn : DEFAULT_ENDPOINT_IN;
+        endpointOut = (cfg.zmqEndpointOut != null && !cfg.zmqEndpointOut.isEmpty())
+                ? cfg.zmqEndpointOut : DEFAULT_ENDPOINT_OUT;
+
         context = new ZContext();
 
         // Sensors / inject → native (native binds SUB)
         pubIn = context.createSocket(ZMQ.PUB);
-        pubIn.connect(ENDPOINT_IN);
+        pubIn.connect(endpointIn);
         pubIn.setSendTimeOut(10);
-        Log.i(TAG, "ZMQ PUB connected to " + ENDPOINT_IN);
+        Log.i(TAG, "ZMQ PUB connected to " + endpointIn);
 
         // Native → bag (native binds PUB)
         subOut = context.createSocket(ZMQ.SUB);
-        subOut.connect(ENDPOINT_OUT);
+        subOut.connect(endpointOut);
         subOut.subscribe("".getBytes(StandardCharsets.UTF_8));
         subOut.setReceiveTimeOut(10);
-        Log.i(TAG, "ZMQ SUB connected to " + ENDPOINT_OUT);
+        Log.i(TAG, "ZMQ SUB connected to " + endpointOut);
 
         poller = context.createPoller(1);
         poller.register(subOut, Poller.POLLIN);
@@ -147,27 +169,55 @@ public class ZMQBridgeService extends Service {
         Log.d(TAG, "ZMQ message loop started");
         while (isRunning) {
             try {
+                flushInboundQueue();
                 if (poller == null) {
                     Thread.sleep(10);
                     continue;
                 }
                 int events = poller.poll(10);
                 if (events > 0 && poller.pollin(0)) {
-                    recvOutbound();
+                    // Drain outbound burst so bag/UI keep up with can/rx.
+                    for (int i = 0; i < 64; i++) {
+                        if (!recvOutbound()) {
+                            break;
+                        }
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error in ZMQ message loop", e);
             }
         }
+        flushInboundQueue();
         Log.d(TAG, "ZMQ message loop stopped");
     }
 
-    private void recvOutbound() {
+    /** Send all queued Java→native frames on the ZMQ thread only. */
+    private void flushInboundQueue() {
+        Socket pub = pubIn;
+        if (pub == null) {
+            inboundQueue.clear();
+            return;
+        }
+        InboundFrame frame;
+        while ((frame = inboundQueue.poll()) != null) {
+            try {
+                boolean ok = pub.sendMore(frame.topic) && pub.send(frame.body, ZMQ.DONTWAIT);
+                if (!ok) {
+                    Log.d(TAG, "ZMQ inbound send dropped");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error publishing inbound frame", e);
+            }
+        }
+    }
+
+    /** @return false if no message was available */
+    private boolean recvOutbound() {
         try {
             // multipart [topic][payload], or single-frame protobuf
             byte[] first = subOut.recv(ZMQ.DONTWAIT);
             if (first == null || first.length == 0) {
-                return;
+                return false;
             }
 
             String topic;
@@ -177,7 +227,7 @@ public class ZMQBridgeService extends Service {
                 payload = subOut.recv(ZMQ.DONTWAIT);
                 if (payload == null) {
                     Log.w(TAG, "Outbound multipart missing payload for " + topic);
-                    return;
+                    return true;
                 }
             } else {
                 payload = first;
@@ -198,17 +248,23 @@ public class ZMQBridgeService extends Service {
                     Log.e(TAG, "Outbound listener error for '" + topic + "'", cbEx);
                 }
             }
+            return true;
         } catch (Exception e) {
             Log.e(TAG, "Error receiving outbound ZMQ", e);
+            return true;
         }
     }
 
     /**
-     * Publish a sensor / command message to native (IN endpoint).
+     * Queue a message for native (ZMQ IN). Safe from any thread.
+     * Prefer {@link #publishToNative(ZMQMessage)} at call sites.
      */
-    public void publishInternalMessage(String topic, ZMQMessage message) {
+    public void publishToNative(String topic, ZMQMessage message) {
         if (!isRunning || pubIn == null) {
             Log.w(TAG, "ZMQ Bridge not running");
+            return;
+        }
+        if (message == null) {
             return;
         }
         try {
@@ -218,14 +274,26 @@ public class ZMQBridgeService extends Service {
             }
             byte[] body = b.build().toByteArray();
             String t = (topic != null && !topic.isEmpty()) ? topic : b.getTopic();
-            boolean ok = pubIn.sendMore(t.getBytes(StandardCharsets.UTF_8))
-                    && pubIn.send(body, ZMQ.DONTWAIT);
-            if (!ok) {
-                Log.d(TAG, "ZMQ inbound send dropped for '" + t + "'");
+            if (t == null || t.isEmpty()) {
+                Log.w(TAG, "Dropping inbound with empty topic");
+                return;
             }
+            inboundQueue.offer(new InboundFrame(t.getBytes(StandardCharsets.UTF_8), body));
         } catch (Exception e) {
-            Log.e(TAG, "Error publishing to native for topic: " + topic, e);
+            Log.e(TAG, "Error queueing publish to native for topic: " + topic, e);
         }
+    }
+
+    /** Publish into native over ZMQ IN. No-op if the bridge service is not running. */
+    public static void publishToNative(ZMQMessage message) {
+        if (message == null) {
+            return;
+        }
+        ZMQBridgeService bridge = getInstance();
+        if (bridge == null || !bridge.isRunning()) {
+            return;
+        }
+        bridge.publishToNative(message.getTopic(), message);
     }
 
     public boolean isRunning() {

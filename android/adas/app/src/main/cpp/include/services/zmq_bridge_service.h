@@ -8,9 +8,9 @@
 #include "framework/service_manager.hpp"
 #include "messages.pb.h"
 
-/** Single inbound socket (external PUB → native SUB). */
+/** Default inbound bind (overridden by assets/config.json → zmq.endpoint_in). */
 inline constexpr const char* kZmqEndpointIn = "tcp://127.0.0.1:5555";
-/** Single outbound socket (native PUB → external SUB). */
+/** Default outbound bind (overridden by assets/config.json → zmq.endpoint_out). */
 inline constexpr const char* kZmqEndpointOut = "tcp://127.0.0.1:5556";
 
 /** Internal topics forwarded to the outbound ZMQ PUB. */
@@ -26,7 +26,7 @@ inline const std::vector<std::string> kZmqOutboundTopics = {
  *   [0] topic UTF-8 string
  *   [1] ai.flow.adas.ZMQMessage protobuf
  *
- * Bind: SUB @ kZmqEndpointIn, PUB @ kZmqEndpointOut.
+ * Bind: SUB @ endpoint_in, PUB @ endpoint_out (from AdasRuntimeConfig / config.json).
  * External peers connect (Java sensors/tools PUB→IN, Java BagLogger SUB←OUT).
  */
 class ZmqBridgeService : public microros::Service {

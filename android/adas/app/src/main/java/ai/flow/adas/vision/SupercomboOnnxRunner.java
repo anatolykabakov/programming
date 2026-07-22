@@ -61,11 +61,6 @@ public class SupercomboOnnxRunner {
     private final float[] currFrame6 = new float[CH_PER_FRAME * TENSOR_H * TENSOR_W];
     private final float[] input12 = new float[TENSOR_C * TENSOR_H * TENSOR_W];
 
-    public interface Listener {
-        void onLanes(LaneLines lanes);
-        void onError(String msg);
-    }
-
     public static final class Result {
         public final LaneLines lanes;
         public final CameraOdometry pose;

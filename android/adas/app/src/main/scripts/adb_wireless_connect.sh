@@ -1,7 +1,8 @@
 #!/bin/bash
 # Скрипт для беспроводного подключения ADB к устройству
 
-ADB_PORT="5555"
+# Avoid 5555 — conflicts with native ZMQ IN (tcp://127.0.0.1:5555)
+ADB_PORT="${ADB_PORT:-5557}"
 
 # Функция для получения IP адреса устройства
 get_device_ip() {

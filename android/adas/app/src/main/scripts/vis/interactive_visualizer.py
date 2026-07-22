@@ -62,7 +62,7 @@ from core.lane_keep import (
 )
 from core.lane_keep_viz import draw_lane_keep_overlay
 from core.pure_pursuit import plan_to_polyline_ego
-from core.viz_params_ui import OverlayUiParams, RpyPpControlBar
+from core.viz_params_ui import OverlayUiParams, RpyPpControlBar, load_camera_priors
 from core.vanishing_point_calib import (
     K_from_fx_fy_cx_cy,
     VanishingPointCalibrator,
@@ -129,19 +129,23 @@ class InteractiveVisualizer:
         self.intr_msg = None
         self.supercombo = SupercomboBev()
         self.bag_dir: Optional[Path] = None
-        # AAD vanishing-point pitch/yaw (roll=0); prior ≈ Golf windshield — C++ CameraCalibService
+        # Camera priors from assets/config.json (Reset VP baseline)
+        self._asset_priors = load_camera_priors()
+        ap = self._asset_priors
         self.vp_calib = VanishingPointCalibrator(
             history_len=50,
-            estimated_pitch_deg=-6.0,
-            estimated_yaw_deg=0.0,
-            camera_height_m=1.40,
+            estimated_pitch_deg=ap.pitch_deg,
+            estimated_yaw_deg=ap.yaw_deg,
+            camera_height_m=ap.height_m,
         )
         self._vp_last_img_index: Optional[int] = None
         self._play_last_wall_ms: Optional[float] = None
-        self._overlay_pitch_deg = -6.0
-        self._overlay_yaw_deg = 0.0
-        self._overlay_roll_deg = 0.0
-        self._overlay_height_m = 1.40
+        self._overlay_pitch_deg = ap.pitch_deg
+        self._overlay_yaw_deg = ap.yaw_deg
+        self._overlay_roll_deg = ap.roll_deg
+        self._overlay_height_m = ap.height_m
+        self._overlay_cam_x = ap.cam_x
+        self._overlay_cam_y = ap.cam_y_left
 
         self.playing = False
         self.play_speed = 1.0
@@ -208,9 +212,17 @@ class InteractiveVisualizer:
             command=lambda: self.update_display(self.current_index),
         ).pack(side=tk.LEFT, padx=6)
         ttk.Button(
-            control, text="Reset VP", command=lambda: self.reset_vp_calib(load_saved=False)
+            control,
+            text="Reset VP",
+            command=lambda: self.reset_vp_calib(load_saved=False),
         ).pack(side=tk.LEFT, padx=4)
-        self.vp_status = ttk.Label(control, text="RPY 0 / -6 / 0°")
+        self.vp_status = ttk.Label(
+            control,
+            text=(
+                f"RPY {self._overlay_roll_deg:.1f} / "
+                f"{self._overlay_pitch_deg:.1f} / {self._overlay_yaw_deg:.1f}°"
+            ),
+        )
         self.vp_status.pack(side=tk.LEFT, padx=8)
 
         ttk.Label(control, text="Speed:").pack(side=tk.LEFT, padx=(20, 5))
@@ -230,12 +242,15 @@ class InteractiveVisualizer:
         self.status_label = ttk.Label(control, text="Ready", foreground="green")
         self.status_label.pack(side=tk.RIGHT, padx=10)
 
-        # RPY / PP — shared with MetaDrive sim
+        # RPY / PP — priors from assets/config.json; shared with MetaDrive sim
+        ap = self._asset_priors
         initial = OverlayUiParams(
-            roll_deg=0.0,
-            pitch_deg=-6.0,
-            yaw_deg=0.0,
-            height_m=1.40,
+            roll_deg=ap.roll_deg,
+            pitch_deg=ap.pitch_deg,
+            yaw_deg=ap.yaw_deg,
+            height_m=ap.height_m,
+            cam_x=ap.cam_x,
+            cam_y_left=ap.cam_y_left,
             pp_k_dd=0.4,
             pp_ld_min=3.0,
             pp_ld_max=20.0,
@@ -248,10 +263,13 @@ class InteractiveVisualizer:
             on_rpy=self._on_rpy_params,
             on_pp=self._on_pp_params,
         )
+        self.params_bar.set_rpy_defaults_from_current()
         self.roll_var = self.params_bar.roll_var
         self.pitch_var = self.params_bar.pitch_var
         self.yaw_var = self.params_bar.yaw_var
         self.height_var = self.params_bar.height_var
+        self.cam_x_var = self.params_bar.cam_x_var
+        self.cam_y_var = self.params_bar.cam_y_var
         self.pp_kdd_var = self.params_bar.pp_kdd_var
         self.pp_ld_min_var = self.params_bar.pp_ld_min_var
         self.pp_ld_max_var = self.params_bar.pp_ld_max_var
@@ -625,6 +643,13 @@ class InteractiveVisualizer:
         self._overlay_pitch_deg = p.pitch_deg
         self._overlay_yaw_deg = p.yaw_deg
         self._overlay_height_m = p.height_m
+        self._overlay_cam_x = p.cam_x
+        self._overlay_cam_y = p.cam_y_left
+        # Hand-tune seeds VP so the next window averages from this prior.
+        self.vp_calib.set_estimate(p.pitch_deg, p.yaw_deg, clear_history=True)
+        if hasattr(self, "params_bar"):
+            self.params_bar.set_rpy_defaults_from_current()
+        self._update_vp_status_label()
         if not self.playing:
             self.update_camera_view(self.current_index)
 
@@ -640,18 +665,24 @@ class InteractiveVisualizer:
             pitch_deg=self._overlay_pitch_deg,
             yaw_deg=self._overlay_yaw_deg,
             height_m=self._overlay_height_m,
+            cam_x=self._overlay_cam_x,
+            cam_y_left=self._overlay_cam_y,
             notify=False,
         )
 
     def reset_vp_calib(self, load_saved: bool = False) -> None:
-        """Reset online VP history; optionally load session ``calib_rpy.json``."""
+        """Reset online VP history to assets priors; optionally load session ``calib_rpy.json``."""
+        ap = self._asset_priors
         self.vp_calib.reset()
-        self.vp_calib.estimated_pitch_deg = -6.0
-        self.vp_calib.estimated_yaw_deg = 0.0
-        self._overlay_pitch_deg = -6.0
-        self._overlay_yaw_deg = 0.0
-        self._overlay_roll_deg = 0.0
-        self._overlay_height_m = 1.40
+        self.vp_calib.estimated_pitch_deg = ap.pitch_deg
+        self.vp_calib.estimated_yaw_deg = ap.yaw_deg
+        self.vp_calib.camera_height_m = ap.height_m
+        self._overlay_pitch_deg = ap.pitch_deg
+        self._overlay_yaw_deg = ap.yaw_deg
+        self._overlay_roll_deg = ap.roll_deg
+        self._overlay_height_m = ap.height_m
+        self._overlay_cam_x = ap.cam_x
+        self._overlay_cam_y = ap.cam_y_left
         self._vp_last_img_index = None
         if load_saved and self.bag_dir is not None:
             path = self.bag_dir / "calib_rpy.json"
@@ -659,8 +690,8 @@ class InteractiveVisualizer:
                 try:
                     data = json.loads(path.read_text())
                     pitch = None
-                    yaw = 0.0
-                    roll = 0.0
+                    yaw = ap.yaw_deg
+                    roll = ap.roll_deg
                     if "pitch_deg" in data:
                         pitch = float(data["pitch_deg"])
                     elif "pitch" in data:
@@ -673,6 +704,12 @@ class InteractiveVisualizer:
                         roll = float(data["roll_deg"])
                     elif "roll" in data:
                         roll = float(np.rad2deg(data["roll"]))
+                    if "camera_height" in data:
+                        self._overlay_height_m = float(data["camera_height"])
+                    if "cam_x" in data:
+                        self._overlay_cam_x = float(data["cam_x"])
+                    if "cam_y_left" in data:
+                        self._overlay_cam_y = float(data["cam_y_left"])
                     # Looking-down windshield: reject saved +pitch (Hough junk)
                     if pitch is not None and pitch <= 2.0:
                         self.vp_calib.estimated_pitch_deg = pitch
@@ -685,16 +722,38 @@ class InteractiveVisualizer:
                         )
                         print(
                             f"Loaded VP calib from {path}: "
-                            f"roll={roll:.2f}° pitch={pitch:.2f}° yaw={yaw:.2f}°"
+                            f"roll={roll:.2f}° pitch={pitch:.2f}° yaw={yaw:.2f}° "
+                            f"h={self._overlay_height_m:.2f} "
+                            f"x={self._overlay_cam_x:.2f} y={self._overlay_cam_y:.2f}"
                         )
                     else:
                         print(
-                            f"Ignored {path} pitch={pitch} (expect looking-down ≤2°); "
-                            "using Golf prior -6°"
+                            f"Ignored {path} pitch={pitch} (expect ≤2°); "
+                            f"using assets prior P={ap.pitch_deg:.1f}°"
                         )
                 except Exception as e:
                     print(f"Failed to load {path}: {e}")
+        else:
+            print(
+                f"VP reset → assets prior "
+                f"R/P/Y={ap.roll_deg:.1f}/{ap.pitch_deg:.1f}/{ap.yaw_deg:.1f}° "
+                f"h={ap.height_m:.2f} x={ap.cam_x:.2f} y={ap.cam_y_left:.2f}"
+            )
+        self.vp_calib.set_estimate(
+            self._overlay_pitch_deg, self._overlay_yaw_deg, clear_history=True
+        )
         self._sync_rpy_sliders_from_overlay()
+        if hasattr(self, "params_bar"):
+            self.params_bar.set_rpy_defaults(
+                OverlayUiParams(
+                    roll_deg=self._overlay_roll_deg,
+                    pitch_deg=self._overlay_pitch_deg,
+                    yaw_deg=self._overlay_yaw_deg,
+                    height_m=self._overlay_height_m,
+                    cam_x=self._overlay_cam_x,
+                    cam_y_left=self._overlay_cam_y,
+                )
+            )
         self._update_vp_status_label()
         if hasattr(self, "camera_frames") and self.camera_frames:
             self.update_display(self.current_index)
@@ -729,21 +788,27 @@ class InteractiveVisualizer:
         if advance and line_l is not None and line_r is not None:
             self._vp_last_img_index = img_index
             if self.vp_calib.update_from_lines(line_l, line_r, K):
+                pitch = float(self.vp_calib.estimated_pitch_deg)
+                yaw = float(self.vp_calib.estimated_yaw_deg)
                 print(
                     f"VP calib commit #{self.vp_calib.n_updates}: "
-                    f"pitch={self.vp_calib.estimated_pitch_deg:.2f}° "
-                    f"yaw={self.vp_calib.estimated_yaw_deg:.2f}°"
+                    f"pitch={pitch:.2f}° yaw={yaw:.2f}°"
                 )
-                self._overlay_pitch_deg = self.vp_calib.estimated_pitch_deg
-                self._overlay_yaw_deg = self.vp_calib.estimated_yaw_deg
+                self._overlay_pitch_deg = pitch
+                self._overlay_yaw_deg = yaw
                 self._sync_rpy_sliders_from_overlay()
+                if hasattr(self, "params_bar"):
+                    self.params_bar.update_rpy_defaults(pitch_deg=pitch, yaw_deg=yaw)
                 if self.bag_dir is not None:
                     out = self.bag_dir / "calib_rpy.json"
                     payload = self.vp_calib.to_dict()
                     payload["roll_deg"] = self._overlay_roll_deg
                     payload["roll"] = float(np.deg2rad(self._overlay_roll_deg))
-                    payload["pitch"] = float(np.deg2rad(self.vp_calib.estimated_pitch_deg))
-                    payload["yaw"] = float(np.deg2rad(self.vp_calib.estimated_yaw_deg))
+                    payload["pitch"] = float(np.deg2rad(pitch))
+                    payload["yaw"] = float(np.deg2rad(yaw))
+                    payload["camera_height"] = self._overlay_height_m
+                    payload["cam_x"] = self._overlay_cam_x
+                    payload["cam_y_left"] = self._overlay_cam_y
                     try:
                         out.write_text(json.dumps(payload, indent=2))
                     except OSError:
@@ -790,6 +855,8 @@ class InteractiveVisualizer:
         height_m = (
             float(self.height_var.get()) if hasattr(self, "height_var") else self._overlay_height_m
         )
+        cam_x = float(self.cam_x_var.get()) if hasattr(self, "cam_x_var") else self._overlay_cam_x
+        cam_y = float(self.cam_y_var.get()) if hasattr(self, "cam_y_var") else self._overlay_cam_y
 
         if self.supercombo_var.get():
             geom = make_overlay_geometry(
@@ -803,6 +870,8 @@ class InteractiveVisualizer:
                 pitch_deg=pitch_deg,
                 yaw_deg=yaw_deg,
                 roll_deg=roll_deg,
+                cam_x=cam_x,
+                cam_y_left=cam_y,
             )
             use_bag_lanes = self.lane_source_var.get() == "bag" and len(self.bag_lane_frames) > 0
             out = self.supercombo.infer(img, cache_key=img_index)
@@ -891,7 +960,8 @@ class InteractiveVisualizer:
             cv2.putText(
                 img,
                 f"cam-state dt={dt:+.0f}ms  img#{img_index}  "
-                f"RPY={roll_deg:.1f}/{pitch_deg:.1f}/{yaw_deg:.1f}  h={height_m:.2f}m",
+                f"RPY={roll_deg:.1f}/{pitch_deg:.1f}/{yaw_deg:.1f}  "
+                f"h={height_m:.2f} x={cam_x:.2f} y={cam_y:.2f}",
                 (8, h - 28),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.4,

@@ -8,7 +8,7 @@ namespace adas {
 
 /**
  * Android/ZMQ protobuf → typed algorithm inputs:
- *   vision/lanes  → vision/path
+ *   vision/lanes  → vision/path  (plan + optional near-lane blend)
  *   vehicle/state → vehicle/chassis
  *   sensors/imu   → sensors/imu_raw
  *   sensors/gps/location → sensors/gps/location (GpsSample ENU)

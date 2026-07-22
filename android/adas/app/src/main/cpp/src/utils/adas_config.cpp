@@ -95,6 +95,28 @@ void setDouble(const std::string& j, const std::string& key, double& field)
     field = v;
 }
 
+bool parseStringAt(const std::string& j, size_t i, std::string* out)
+{
+  if (i == std::string::npos || i >= j.size() || j[i] != '"')
+    return false;
+  const size_t start = i + 1;
+  const size_t end = j.find('"', start);
+  if (end == std::string::npos)
+    return false;
+  *out = j.substr(start, end - start);
+  return true;
+}
+
+void setString(const std::string& j, const std::string& key, std::string& field)
+{
+  const size_t p = findKey(j, key);
+  if (p == std::string::npos)
+    return;
+  std::string v;
+  if (parseStringAt(j, afterColon(j, p, key.size() + 2), &v) && !v.empty())
+    field = std::move(v);
+}
+
 }  // namespace
 
 AdasRuntimeConfig loadAdasRuntimeConfig(const std::string& path, bool* ok)
@@ -124,6 +146,11 @@ AdasRuntimeConfig loadAdasRuntimeConfig(const std::string& path, bool* ok)
 
   setDouble(j, "wheelbase_m", cfg.wheelbase_m);
   setDouble(j, "steer_ratio", cfg.steer_ratio);
+  setDouble(j, "max_steer_deg", cfg.max_steer_deg);
+  setDouble(j, "max_torque_cnm", cfg.max_torque_cnm);
+  setDouble(j, "lat_pid_kp", cfg.lat_pid_kp);
+  setDouble(j, "lat_pid_ki", cfg.lat_pid_ki);
+  setDouble(j, "lat_pid_kf", cfg.lat_pid_kf);
   setDouble(j, "roll", cfg.roll0_deg);
   setDouble(j, "pitch", cfg.pitch0_deg);
   setDouble(j, "yaw", cfg.yaw0_deg);
@@ -132,11 +159,15 @@ AdasRuntimeConfig loadAdasRuntimeConfig(const std::string& path, bool* ok)
   setDouble(j, "fy", cfg.fy);
   setDouble(j, "cx", cfg.cx);
   setDouble(j, "cy", cfg.cy);
+  setString(j, "endpoint_in", cfg.zmq_endpoint_in);
+  setString(j, "endpoint_out", cfg.zmq_endpoint_out);
 
   LOGI("loadAdasRuntimeConfig %s: lane_keep=%d loc=%d cam=%d imu=%d wb=%.3f "
-       "R/P/Y=%.1f/%.1f/%.1f h=%.2f",
+       "max_steer=%.1f° max_tq=%.0f pid=%.2f/%.2f/%.5f R/P/Y=%.1f/%.1f/%.1f h=%.2f zmq_in=%s zmq_out=%s",
        path.c_str(), cfg.lane_keep ? 1 : 0, cfg.localization ? 1 : 0, cfg.camera_calib ? 1 : 0, cfg.imu_calib ? 1 : 0,
-       cfg.wheelbase_m, cfg.roll0_deg, cfg.pitch0_deg, cfg.yaw0_deg, cfg.camera_height_m);
+       cfg.wheelbase_m, cfg.max_steer_deg, cfg.max_torque_cnm, cfg.lat_pid_kp, cfg.lat_pid_ki, cfg.lat_pid_kf,
+       cfg.roll0_deg, cfg.pitch0_deg, cfg.yaw0_deg, cfg.camera_height_m, cfg.zmq_endpoint_in.c_str(),
+       cfg.zmq_endpoint_out.c_str());
 
   if (ok)
     *ok = true;

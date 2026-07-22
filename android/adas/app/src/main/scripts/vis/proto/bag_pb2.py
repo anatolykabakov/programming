@@ -3,10 +3,10 @@
 # source: bag.proto
 """Generated protocol buffer code."""
 
+from google.protobuf.internal import builder as _builder
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
-from google.protobuf.internal import builder as _builder
 
 # @@protoc_insertion_point(imports)
 
@@ -20,11 +20,11 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b'\n\tbag.proto\x12\x03\x62\x61g\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x0emessages.proto"`\n\x03\x42\x61g\x12-\n\ttimestamp\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12*\n\x08messages\x18\x02 \x03(\x0b\x32\x18.ai.flow.adas.ZMQMessageb\x06proto3'
 )
 
-_globals = globals()
-_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "bag_pb2", _globals)
+_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "bag_pb2", globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
+
     DESCRIPTOR._options = None
-    _globals["_BAG"]._serialized_start = 67
-    _globals["_BAG"]._serialized_end = 163
+    _BAG._serialized_start = 67
+    _BAG._serialized_end = 163
 # @@protoc_insertion_point(module_scope)

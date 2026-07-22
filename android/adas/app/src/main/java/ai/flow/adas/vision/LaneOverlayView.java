@@ -14,7 +14,8 @@ import android.view.View;
  * Projects ego-frame supercombo + Pure Pursuit onto the camera view.
  * Yellow = lane lines, red = road edges, green = PLAN,
  * magenta = PP curvature arc, orange = Ld circle, cyan = PP target,
- * bottom-right = steering-wheel HUD + torque bar.
+ * bottom-right = steering-wheel HUD + torque bar,
+ * top-center = controls_allowed traffic light.
  *
  * Uses center-crop of the capture buffer (W×H) into the view — same aspect as the
  * corrected TextureView preview. Do NOT reuse TextureView.setTransform(): that matrix
@@ -41,15 +42,27 @@ public class LaneOverlayView extends View {
 
     private volatile LaneLines lanes;
 
-    private float fx = 930f;
-    private float fy = 930f;
-    private float cx = 640f;
-    private float cy = 360f;
-    private float cameraHeight = 1.22f;
-    private float frameW = 1280f;
-    private float frameH = 720f;
-    private float waypointShift = 1.40f;
+    // Filled from assets/config.json via setIntrinsics / setExtrinsics (MainActivity).
+    // These zeros are only placeholders until config loads — not sim/phone priors.
+    private float fx;
+    private float fy;
+    private float cx;
+    private float cy;
+    private float cameraHeight;
+    private float frameW = 1f;
+    private float frameH = 1f;
+    private float waypointShift;
     private float steerRatio = 15.7f;
+    /**
+     * Longitudinal camera→rear-axle offset (m) for Pure Pursuit only.
+     * Supercombo lanes/plan are in openpilot camera ego frame (X=0 at camera) —
+     * do NOT subtract this again in {@link #projectEgo} or overlay sits ~camX ahead.
+     */
+    private float camX;
+    private float camYLeft;
+    private float pitchDeg;
+    private float yawDeg;
+    private float rollDeg;
 
     // Pure Pursuit / lane-keep (from C++ via ZMQ)
     private volatile boolean ppValid = false;
@@ -70,9 +83,12 @@ public class LaneOverlayView extends View {
     private volatile boolean calibValid = false;
     private volatile float calibPitchDeg;
     private volatile float calibYawDeg;
-    private volatile float calibRollDeg;
     private volatile boolean calibOk;
     private volatile int calibPercent;
+
+    // Panda controls_allowed (traffic light)
+    private volatile boolean controlsAllowedKnown = false;
+    private volatile boolean controlsAllowed = false;
 
     public LaneOverlayView(Context context) {
         super(context);
@@ -151,13 +167,34 @@ public class LaneOverlayView extends View {
     }
 
     public void setCameraHeight(float meters) {
-        this.cameraHeight = meters;
+        if (meters > 0.1f) {
+            this.cameraHeight = meters;
+        }
+        postInvalidateOnAnimation();
+    }
+
+    /**
+     * Golf / phone mount extrinsics for overlay projection (AAD CameraGeometry).
+     * {@code pitchDeg} negative = looking down.
+     */
+    public void setExtrinsics(float camXFwd, float camYLeft, float heightM,
+                              float rollDeg, float pitchDeg, float yawDeg) {
+        this.camX = camXFwd;
+        this.camYLeft = camYLeft;
+        if (heightM > 0.1f) {
+            this.cameraHeight = heightM;
+        }
+        this.rollDeg = rollDeg;
+        this.pitchDeg = pitchDeg;
+        this.yawDeg = yawDeg;
+        this.waypointShift = camXFwd;
         postInvalidateOnAnimation();
     }
 
     /** Camera→rear-axle longitudinal offset used by Pure Pursuit (meters). */
     public void setWaypointShift(float meters) {
         this.waypointShift = meters;
+        this.camX = meters;
         postInvalidateOnAnimation();
     }
 
@@ -193,22 +230,25 @@ public class LaneOverlayView extends View {
         postInvalidateOnAnimation();
     }
 
-    /** Live extrinsic calib (flowpilot calibrationd). */
-    public void setCameraCalib(float pitchDeg, float yawDeg, float rollDeg, float heightM,
+    /** Live extrinsic calib (flowpilot pose / VP). Pitch AAD: negative = looking down. */
+    public void setCameraCalib(float pitchDeg, float yawDeg, float heightM,
                                boolean calibrated, int calPercent) {
         this.calibPitchDeg = pitchDeg;
         this.calibYawDeg = yawDeg;
-        this.calibRollDeg = rollDeg;
-        this.cameraHeight = heightM > 0.1f ? heightM : this.cameraHeight;
+        this.pitchDeg = pitchDeg;
+        this.yawDeg = yawDeg;
+        if (heightM > 0.1f) {
+            this.cameraHeight = heightM;
+        }
         this.calibOk = calibrated;
         this.calibPercent = calPercent;
         this.calibValid = true;
         postInvalidateOnAnimation();
     }
 
-    public void clearLaneKeep() {
-        ppValid = false;
-        steerValid = false;
+    public void setControlsAllowed(boolean allowed) {
+        this.controlsAllowedKnown = true;
+        this.controlsAllowed = allowed;
         postInvalidateOnAnimation();
     }
 
@@ -255,9 +295,61 @@ public class LaneOverlayView extends View {
             drawSteeringHud(canvas);
             drawPpStatus(canvas);
         }
-        if (calibValid) {
-            drawCalibStatus(canvas);
+        drawCalibStatus(canvas);
+        drawControlsLight(canvas);
+    }
+
+    /** Top-center traffic light: green = controls_allowed, red = blocked / unknown. */
+    private void drawControlsLight(Canvas canvas) {
+        final float housingW = 36f;
+        final float housingH = 92f;
+        final float cxLight = getWidth() * 0.5f;
+        final float top = 12f;
+        final float left = cxLight - housingW * 0.5f;
+        final float right = cxLight + housingW * 0.5f;
+        final float bottom = top + housingH;
+
+        Paint housing = new Paint(Paint.ANTI_ALIAS_FLAG);
+        housing.setStyle(Paint.Style.FILL);
+        housing.setColor(Color.argb(200, 20, 20, 20));
+        canvas.drawRoundRect(left, top, right, bottom, 10f, 10f, housing);
+
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(2f);
+        border.setColor(Color.argb(180, 180, 180, 180));
+        canvas.drawRoundRect(left, top, right, bottom, 10f, 10f, border);
+
+        final float r = 10f;
+        final float[] ys = {top + 18f, top + 46f, top + 74f};
+        final int[] dims = {
+                Color.argb(90, 180, 40, 40),
+                Color.argb(90, 180, 150, 40),
+                Color.argb(90, 40, 140, 60)
+        };
+        final int[] lit = {
+                Color.rgb(255, 60, 60),
+                Color.rgb(255, 210, 40),
+                Color.rgb(40, 230, 90)
+        };
+
+        int active = 0; // red until we know allowed
+        if (controlsAllowedKnown && controlsAllowed) {
+            active = 2; // green
         }
+
+        Paint lamp = new Paint(Paint.ANTI_ALIAS_FLAG);
+        lamp.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 3; i++) {
+            lamp.setColor(i == active ? lit[i] : dims[i]);
+            canvas.drawCircle(cxLight, ys[i], r, lamp);
+        }
+
+        textPaint.setTextSize(18f);
+        textPaint.setColor(active == 2 ? Color.rgb(40, 230, 90) : Color.rgb(255, 90, 90));
+        String label = active == 2 ? "controls OK" : "controls off";
+        float tw = textPaint.measureText(label);
+        canvas.drawText(label, cxLight - tw * 0.5f, bottom + 22f, textPaint);
     }
 
     private void drawPurePursuit(Canvas canvas) {
@@ -425,12 +517,29 @@ public class LaneOverlayView extends View {
     }
 
     private void drawCalibStatus(Canvas canvas) {
-        String status = calibOk ? "calib OK" : ("calib " + calibPercent + "%");
-        String line = String.format("%s  P=%+.2f Y=%+.2f°", status, calibPitchDeg, calibYawDeg);
+        // Top-left under PP status — bottom-left was covered by the log FAB.
+        final boolean live = calibValid;
+        final String status;
+        if (!live) {
+            status = "calib prior";
+        } else if (calibOk) {
+            status = "calib OK";
+        } else {
+            status = "calib " + calibPercent + "%";
+        }
+        final float p = live ? calibPitchDeg : pitchDeg;
+        final float yaw = live ? calibYawDeg : yawDeg;
+        String line = String.format("%s  P=%+.2f Y=%+.2f°  h=%.2fm", status, p, yaw, cameraHeight);
         textPaint.setTextSize(26f);
-        textPaint.setColor(calibOk ? Color.rgb(0, 220, 120) : Color.rgb(255, 200, 0));
+        if (!live) {
+            textPaint.setColor(Color.rgb(180, 180, 180));
+        } else if (calibOk) {
+            textPaint.setColor(Color.rgb(0, 220, 120));
+        } else {
+            textPaint.setColor(Color.rgb(255, 200, 0));
+        }
         float x = 12f;
-        float y = getHeight() - 28f;
+        float y = ppValid ? 96f : 40f;
         float w = textPaint.measureText(line) + 16f;
         canvas.drawRect(x - 8f, y - 28f, x + w, y + 8f, textBgPaint);
         canvas.drawText(line, x, y, textPaint);
@@ -466,12 +575,9 @@ public class LaneOverlayView extends View {
     }
 
     /**
-     * Project ego (X forward, Y left — openpilot) with pinhole:
-     *   u = cx - fx * Y / X   (+Y left → smaller u)
-     *   v = cy + fy * h / X
-     *
-     * Lateral Y is already converted to Y-left in {@link SupercomboOnnxRunner}
-     * (this ONNX raw output is Y-right).
+     * Project ISO ego (X forward, Y left, Z=0 ground) via AAD CameraGeometry:
+     * road = (−Y, 0, X), then K · T_road→cam. Matches {@code lane_projection.py}.
+     * Lateral Y is already Y-left in {@link SupercomboOnnxRunner}.
      */
     private void drawPolylineXY(Canvas canvas, float[] xs, float[] ys, Paint paint, float xMin) {
         path.reset();
@@ -506,8 +612,54 @@ public class LaneOverlayView extends View {
         if (X < xMin || !Float.isFinite(X) || !Float.isFinite(Y)) {
             return false;
         }
-        float u = cx - fx * (Y / X);
-        float v = cy + fy * (cameraHeight / X);
+
+        // ISO → AAD road frame: (Xr, Yr, Zr) = (−Y_iso, −Z_iso, X_iso), Z_iso=0
+        final double xr = -Y;
+        final double yr = 0.0;
+        final double zr = X;
+
+        final double yaw = Math.toRadians(yawDeg);
+        final double pitch = Math.toRadians(pitchDeg);
+        final double roll = Math.toRadians(rollDeg);
+        final double cyA = Math.cos(yaw);
+        final double sy = Math.sin(yaw);
+        final double cp = Math.cos(pitch);
+        final double sp = Math.sin(pitch);
+        final double cr = Math.cos(roll);
+        final double sr = Math.sin(roll);
+
+        // AAD rotation_road_to_cam
+        final double r00 = cr * cyA + sp * sr * sy;
+        final double r01 = cr * sp * sy - cyA * sr;
+        final double r02 = -cp * sy;
+        final double r10 = cp * sr;
+        final double r11 = cp * cr;
+        final double r12 = sp;
+        final double r20 = cr * sy - cyA * sp * sr;
+        final double r21 = -cr * cyA * sp - sr * sy;
+        final double r22 = cp * cyA;
+
+        // R_cam_to_road = R_road_to_cam^T ; t_cam_to_road in camera ego frame:
+        // lanes/plan X=0 is at the camera (openpilot calibrated frame), so cam_x = 0.
+        // camX (config x_forward) is only the rear-axle offset for Pure Pursuit.
+        final double t0 = -camYLeft;
+        final double t1 = -cameraHeight;
+        final double t2 = 0.0;
+
+        // p_cam = R_road_to_cam * (p_road - t_cam_to_road)
+        // because T_road_to_cam = inv([R_c2r|t]) = [R_r2c | -R_r2c*t]
+        final double dx = xr - t0;
+        final double dy = yr - t1;
+        final double dz = zr - t2;
+        final double xc = r00 * dx + r01 * dy + r02 * dz;
+        final double yc = r10 * dx + r11 * dy + r12 * dz;
+        final double zc = r20 * dx + r21 * dy + r22 * dz;
+        if (zc <= 0.2) {
+            return false;
+        }
+
+        float u = (float) (fx * (xc / zc) + cx);
+        float v = (float) (fy * (yc / zc) + cy);
         mapPt[0] = u;
         mapPt[1] = v;
         drawMatrix.mapPoints(mapPt);

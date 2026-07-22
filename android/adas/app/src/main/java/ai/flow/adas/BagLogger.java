@@ -4,11 +4,7 @@ import android.util.Log;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,7 +26,6 @@ public class BagLogger {
 
     private AtomicBoolean running = new AtomicBoolean(false);
     private File baseDirectory;
-    private String currentBagName;
 
     // Буферы сообщений по топикам
     private Map<String, List<Messages.ZMQMessage>> topicBuffers = new ConcurrentHashMap<>();
@@ -56,30 +51,6 @@ public class BagLogger {
         return instance;
     }
 
-    public void start(String basePath) {
-        if (running.get()) {
-            Log.i(TAG, "BagLogger already running");
-            return;
-        }
-
-        Log.i(TAG, "Starting BagLogger...");
-
-        String ts = new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", Locale.US).format(new Date());
-        File dir = new File(basePath, ts);
-        if (!dir.exists()) {
-            boolean created = dir.mkdirs();
-            if (!created) {
-                Log.e(TAG, "Failed to create bag directory: " + dir.getAbsolutePath());
-                return;
-            }
-            Log.i(TAG, "Created new bag directory: " + dir.getAbsolutePath());
-        } else {
-            Log.i(TAG, "Using existing bag directory: " + dir.getAbsolutePath());
-        }
-
-        startInDirectory(dir);
-    }
-
     /** Use an existing session directory (shared with text Logger). */
     public void startInDirectory(File dir) {
         if (running.get()) {
@@ -96,7 +67,6 @@ public class BagLogger {
         }
 
         baseDirectory = dir;
-        currentBagName = "BAG_" + dir.getName();
         running.set(true);
         startPeriodicFlush();
         Log.i(TAG, "BagLogger started in " + dir.getAbsolutePath());
@@ -245,22 +215,6 @@ public class BagLogger {
     }
 
     /**
-     * Принудительно записывает буфер указанного топика
-     */
-    public void flushTopic(String topic) {
-        if (!running.get()) return;
-
-        String fixedTopicName = ProtoUtils.fixTopicName(topic);
-        synchronized (this) {
-            flushTopicBuffer(fixedTopicName);
-        }
-    }
-
-    public boolean isRunning() {
-        return running.get();
-    }
-
-    /**
      * Получает имя следующего файла для топика
      */
     private String getNextFileName(String fixedTopicName) {
@@ -272,34 +226,8 @@ public class BagLogger {
 
             Log.i(TAG, "Creating new bag file for topic " + fixedTopicName +
                       " (previous size: " + currentSize + " bytes)");
-
-            // Создаем новый файл с текущим временем
-            return ProtoUtils.createDataFileName(System.currentTimeMillis());
         }
 
         return ProtoUtils.createDataFileName(System.currentTimeMillis());
-    }
-
-    /**
-     * Получает статистику по буферам
-     */
-    public String getBufferStats() {
-        if (!running.get()) return "BagLogger not running";
-
-        StringBuilder stats = new StringBuilder("BagLogger Stats:\n");
-        synchronized (this) {
-            for (String topic : topicBuffers.keySet()) {
-                List<Messages.ZMQMessage> buffer = topicBuffers.get(topic);
-                int size = bufferSizes.get(topic);
-                long fileSize = topicFileSizes.getOrDefault(topic, 0L);
-                int fileCount = 1; // Всегда 1, так как используем время в имени файла
-                stats.append("  ").append(topic).append(": ")
-                     .append(buffer.size()).append(" messages in buffer, ")
-                     .append(size).append(" bytes buffer, ")
-                     .append(fileSize).append(" bytes total, ")
-                     .append(fileCount).append(" files\n");
-            }
-        }
-        return stats.toString();
     }
 }

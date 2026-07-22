@@ -45,6 +45,11 @@ public final class AdasConfig {
 
     public final String supercomboAsset;
 
+    /** Native SUB bind / Java PUB connect (sensors → C++). */
+    public final String zmqEndpointIn;
+    /** Native PUB bind / Java SUB connect (C++ → bag / HUD). */
+    public final String zmqEndpointOut;
+
     private AdasConfig(JSONObject root) throws Exception {
         JSONObject nodes = root.optJSONObject("nodes");
         if (nodes == null) {
@@ -76,17 +81,17 @@ public final class AdasConfig {
         if (pos == null) {
             pos = new JSONObject();
         }
-        camX = (float) pos.optDouble("x_forward", 1.50);
-        camY = (float) pos.optDouble("y_left", 0.0);
-        camZ = (float) pos.optDouble("z_up", 1.40);
+        camX = (float) pos.optDouble("x_forward", 0.0);
+        camY = (float) pos.optDouble("y_left", -0.02);
+        camZ = (float) pos.optDouble("z_up", 0.7);
 
         JSONObject rpy = cam.optJSONObject("rpy_deg");
         if (rpy == null) {
             rpy = new JSONObject();
         }
         rollDeg = (float) rpy.optDouble("roll", 0.0);
-        pitchDeg = (float) rpy.optDouble("pitch", -6.0);
-        yawDeg = (float) rpy.optDouble("yaw", 0.0);
+        pitchDeg = (float) rpy.optDouble("pitch", 0.76);
+        yawDeg = (float) rpy.optDouble("yaw", 1.56);
 
         JSONObject K = cam.optJSONObject("intrinsics_prior");
         if (K == null) {
@@ -100,6 +105,13 @@ public final class AdasConfig {
         frameH = K.optInt("height", 720);
 
         supercomboAsset = root.optString("supercombo_asset", "supercombo.onnx");
+
+        JSONObject zmq = root.optJSONObject("zmq");
+        if (zmq == null) {
+            zmq = new JSONObject();
+        }
+        zmqEndpointIn = zmq.optString("endpoint_in", "tcp://127.0.0.1:5555");
+        zmqEndpointOut = zmq.optString("endpoint_out", "tcp://127.0.0.1:5556");
     }
 
     public static AdasConfig loadDefaults() {
@@ -125,7 +137,9 @@ public final class AdasConfig {
                     + " lane_keep=" + cfg.laneKeep
                     + " localization=" + cfg.localization
                     + " cam h=" + cfg.camZ
-                    + " pitch=" + cfg.pitchDeg);
+                    + " pitch=" + cfg.pitchDeg
+                    + " zmq_in=" + cfg.zmqEndpointIn
+                    + " zmq_out=" + cfg.zmqEndpointOut);
             return cfg;
         } catch (Exception e) {
             Log.w(TAG, "Failed to load " + ASSET + ", using defaults", e);

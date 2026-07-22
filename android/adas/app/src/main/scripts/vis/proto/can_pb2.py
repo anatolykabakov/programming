@@ -3,10 +3,10 @@
 # source: can.proto
 """Generated protocol buffer code."""
 
+from google.protobuf.internal import builder as _builder
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
-from google.protobuf.internal import builder as _builder
 
 # @@protoc_insertion_point(imports)
 
@@ -17,13 +17,13 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b'\n\tcan.proto\x12\x0c\x61i.flow.adas"H\n\x08\x43\x41NFrame\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x03\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c\x12\x10\n\x08\x62us_time\x18\x03 \x01(\x03\x12\x0b\n\x03src\x18\x04 \x01(\x03"D\n\x07\x43\x41NData\x12\x11\n\ttimestamp\x18\x01 \x01(\x03\x12&\n\x06\x66rames\x18\x02 \x03(\x0b\x32\x16.ai.flow.adas.CANFrameb\x06proto3'
 )
 
-_globals = globals()
-_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "can_pb2", _globals)
+_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "can_pb2", globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
+
     DESCRIPTOR._options = None
-    _globals["_CANFRAME"]._serialized_start = 27
-    _globals["_CANFRAME"]._serialized_end = 99
-    _globals["_CANDATA"]._serialized_start = 101
-    _globals["_CANDATA"]._serialized_end = 169
+    _CANFRAME._serialized_start = 27
+    _CANFRAME._serialized_end = 99
+    _CANDATA._serialized_start = 101
+    _CANDATA._serialized_end = 169
 # @@protoc_insertion_point(module_scope)

@@ -3,10 +3,10 @@
 # source: lanes.proto
 """Generated protocol buffer code."""
 
+from google.protobuf.internal import builder as _builder
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
-from google.protobuf.internal import builder as _builder
 
 # @@protoc_insertion_point(imports)
 
@@ -17,14 +17,14 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b'\n\x0blanes.proto\x12\x0c\x61i.flow.adas"\'\n\x0cLanePolyline\x12\t\n\x01y\x18\x01 \x03(\x02\x12\x0c\n\x04prob\x18\x02 \x01(\x02"\xd3\x01\n\tLaneLines\x12\x11\n\ttimestamp\x18\x01 \x01(\x03\x12\x10\n\x08\x66rame_id\x18\x02 \x01(\x05\x12\t\n\x01x\x18\x03 \x03(\x02\x12)\n\x05lanes\x18\x04 \x03(\x0b\x32\x1a.ai.flow.adas.LanePolyline\x12)\n\x05\x65\x64ges\x18\x05 \x03(\x0b\x32\x1a.ai.flow.adas.LanePolyline\x12\x0e\n\x06plan_x\x18\x06 \x03(\x02\x12\x0e\n\x06plan_y\x18\x07 \x03(\x02\x12\x0e\n\x06plan_z\x18\x08 \x03(\x02\x12\x10\n\x08plan_hyp\x18\t \x01(\x05\x42\x07\x42\x05Lanesb\x06proto3'
 )
 
-_globals = globals()
-_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "lanes_pb2", _globals)
+_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "lanes_pb2", globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
-    _globals["DESCRIPTOR"]._options = None
-    _globals["DESCRIPTOR"]._serialized_options = b"B\005Lanes"
-    _globals["_LANEPOLYLINE"]._serialized_start = 29
-    _globals["_LANEPOLYLINE"]._serialized_end = 68
-    _globals["_LANELINES"]._serialized_start = 71
-    _globals["_LANELINES"]._serialized_end = 282
+
+    DESCRIPTOR._options = None
+    DESCRIPTOR._serialized_options = b"B\005Lanes"
+    _LANEPOLYLINE._serialized_start = 29
+    _LANEPOLYLINE._serialized_end = 68
+    _LANELINES._serialized_start = 71
+    _LANELINES._serialized_end = 282
 # @@protoc_insertion_point(module_scope)

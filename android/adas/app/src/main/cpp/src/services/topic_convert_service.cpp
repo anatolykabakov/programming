@@ -32,7 +32,7 @@ void TopicConvertService::onVisionLanes(const ai::flow::adas::ZMQMessage& msg)
     return;
   }
   auto path = laneLinesToPath(msg.lane_lines());
-  LOGI("vision/lanes → path n=%zu frame=%d", path.polyline.size(), path.frame_id);
+  LOGI("vision/lanes → path n=%zu frame=%d (plan+lane blend)", path.polyline.size(), path.frame_id);
   publish(topics::kVisionPath, path);
 }
 

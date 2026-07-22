@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Callable, Optional
+import json
 
 import tkinter as tk
 from tkinter import ttk
@@ -14,12 +16,17 @@ from .lane_keep import DEFAULTS
 
 @dataclass
 class OverlayUiParams:
-    """Live overlay / controller params (same ranges as bag InteractiveVisualizer)."""
+    """Live overlay / controller params (same ranges as bag InteractiveVisualizer).
+
+    Defaults match ``app/src/main/assets/config.json`` camera priors.
+    """
 
     roll_deg: float = 0.0
-    pitch_deg: float = -6.0
-    yaw_deg: float = 0.0
-    height_m: float = 1.40
+    pitch_deg: float = 0.76
+    yaw_deg: float = 1.56
+    height_m: float = 0.7
+    cam_x: float = 0.0
+    cam_y_left: float = -0.02
     pp_k_dd: float = DEFAULTS.pp_k_dd
     pp_ld_min: float = DEFAULTS.pp_ld_min
     pp_ld_max: float = DEFAULTS.pp_ld_max
@@ -33,8 +40,35 @@ class OverlayUiParams:
         return replace(self, pp_ld_min=ld_min, pp_ld_max=ld_max)
 
 
+def assets_config_path() -> Path:
+    """``app/src/main/assets/config.json`` relative to this package."""
+    # core/viz_params_ui.py → scripts → main → assets
+    return Path(__file__).resolve().parents[2] / "assets" / "config.json"
+
+
+def load_camera_priors(path: Optional[Path] = None) -> OverlayUiParams:
+    """Load camera RPY / mount priors from assets config (fallback = dataclass defaults)."""
+    base = OverlayUiParams()
+    cfg = Path(path) if path is not None else assets_config_path()
+    try:
+        data = json.loads(cfg.read_text())
+        cam = (data.get("calibration") or {}).get("camera") or {}
+        pos = cam.get("position_m") or {}
+        rpy = cam.get("rpy_deg") or {}
+        return OverlayUiParams(
+            roll_deg=float(rpy.get("roll", base.roll_deg)),
+            pitch_deg=float(rpy.get("pitch", base.pitch_deg)),
+            yaw_deg=float(rpy.get("yaw", base.yaw_deg)),
+            height_m=float(pos.get("z_up", base.height_m)),
+            cam_x=float(pos.get("x_forward", base.cam_x)),
+            cam_y_left=float(pos.get("y_left", base.cam_y_left)),
+        )
+    except Exception:
+        return base
+
+
 class RpyPpControlBar:
-    """Two rows of sliders: Roll/Pitch/Yaw/Height and K_dd/Ld_min/Ld_max/L_wb/shift."""
+    """Two rows of sliders: Roll/Pitch/Yaw/Height/X/Y and K_dd/Ld_min/Ld_max/L_wb/shift."""
 
     def __init__(
         self,
@@ -59,6 +93,8 @@ class RpyPpControlBar:
         self.pitch_var = tk.DoubleVar(value=initial.pitch_deg)
         self.yaw_var = tk.DoubleVar(value=initial.yaw_deg)
         self.height_var = tk.DoubleVar(value=initial.height_m)
+        self.cam_x_var = tk.DoubleVar(value=initial.cam_x)
+        self.cam_y_var = tk.DoubleVar(value=initial.cam_y_left)
 
         self.roll_label = self._add_rpy_slider(self.rpy_frame, "Roll", self.roll_var, -15.0, 15.0)
         self.pitch_label = self._add_rpy_slider(
@@ -66,7 +102,13 @@ class RpyPpControlBar:
         )
         self.yaw_label = self._add_rpy_slider(self.rpy_frame, "Yaw", self.yaw_var, -20.0, 20.0)
         self.height_label = self._add_rpy_slider(
-            self.rpy_frame, "Height", self.height_var, 0.80, 2.20, unit="m"
+            self.rpy_frame, "Height", self.height_var, 0.40, 2.20, unit="m", length=120
+        )
+        self.cam_x_label = self._add_rpy_slider(
+            self.rpy_frame, "X", self.cam_x_var, 0.0, 3.0, unit="m", length=120
+        )
+        self.cam_y_label = self._add_rpy_slider(
+            self.rpy_frame, "Y", self.cam_y_var, -1.0, 1.0, unit="m", length=120
         )
         ttk.Button(self.rpy_frame, text="Reset RPY", command=self.reset_rpy).pack(
             side=tk.LEFT, padx=12
@@ -104,6 +146,8 @@ class RpyPpControlBar:
             pitch_deg=initial.pitch_deg,
             yaw_deg=initial.yaw_deg,
             height_m=initial.height_m,
+            cam_x=initial.cam_x,
+            cam_y_left=initial.cam_y_left,
         )
         self._pp_defaults = OverlayUiParams(
             pp_k_dd=initial.pp_k_dd,
@@ -121,6 +165,7 @@ class RpyPpControlBar:
         lo: float,
         hi: float,
         unit: str = "°",
+        length: int = 160,
     ) -> ttk.Label:
         ttk.Label(parent, text=f"{name}:").pack(side=tk.LEFT, padx=(8, 2))
         ttk.Scale(
@@ -129,7 +174,7 @@ class RpyPpControlBar:
             to=hi,
             orient=tk.HORIZONTAL,
             variable=var,
-            length=160,
+            length=length,
             command=lambda _v: self._fire_rpy(),
         ).pack(side=tk.LEFT, padx=2)
         text = f"{var.get():.2f}{unit}" if unit == "m" else f"{var.get():.1f}{unit}"
@@ -166,6 +211,8 @@ class RpyPpControlBar:
             pitch_deg=float(self.pitch_var.get()),
             yaw_deg=float(self.yaw_var.get()),
             height_m=float(self.height_var.get()),
+            cam_x=float(self.cam_x_var.get()),
+            cam_y_left=float(self.cam_y_var.get()),
             pp_k_dd=float(self.pp_kdd_var.get()),
             pp_ld_min=float(self.pp_ld_min_var.get()),
             pp_ld_max=float(self.pp_ld_max_var.get()),
@@ -180,6 +227,8 @@ class RpyPpControlBar:
         pitch_deg: Optional[float] = None,
         yaw_deg: Optional[float] = None,
         height_m: Optional[float] = None,
+        cam_x: Optional[float] = None,
+        cam_y_left: Optional[float] = None,
         notify: bool = False,
     ) -> None:
         self._suppress = True
@@ -192,6 +241,10 @@ class RpyPpControlBar:
                 self.yaw_var.set(yaw_deg)
             if height_m is not None:
                 self.height_var.set(height_m)
+            if cam_x is not None:
+                self.cam_x_var.set(cam_x)
+            if cam_y_left is not None:
+                self.cam_y_var.set(cam_y_left)
             self._refresh_rpy_labels()
         finally:
             self._suppress = False
@@ -208,6 +261,8 @@ class RpyPpControlBar:
             pitch_deg=d.pitch_deg,
             yaw_deg=d.yaw_deg,
             height_m=d.height_m,
+            cam_x=d.cam_x,
+            cam_y_left=d.cam_y_left,
             notify=True,
         )
 
@@ -233,6 +288,40 @@ class RpyPpControlBar:
             pitch_deg=p.pitch_deg,
             yaw_deg=p.yaw_deg,
             height_m=p.height_m,
+            cam_x=p.cam_x,
+            cam_y_left=p.cam_y_left,
+        )
+
+    def update_rpy_defaults(
+        self,
+        *,
+        roll_deg: Optional[float] = None,
+        pitch_deg: Optional[float] = None,
+        yaw_deg: Optional[float] = None,
+        height_m: Optional[float] = None,
+        cam_x: Optional[float] = None,
+        cam_y_left: Optional[float] = None,
+    ) -> None:
+        """Patch Reset-RPY baseline (e.g. after VP commit). Unspecified fields keep prior defaults."""
+        d = self._rpy_defaults
+        self._rpy_defaults = OverlayUiParams(
+            roll_deg=d.roll_deg if roll_deg is None else float(roll_deg),
+            pitch_deg=d.pitch_deg if pitch_deg is None else float(pitch_deg),
+            yaw_deg=d.yaw_deg if yaw_deg is None else float(yaw_deg),
+            height_m=d.height_m if height_m is None else float(height_m),
+            cam_x=d.cam_x if cam_x is None else float(cam_x),
+            cam_y_left=d.cam_y_left if cam_y_left is None else float(cam_y_left),
+        )
+
+    def set_rpy_defaults(self, p: OverlayUiParams) -> None:
+        """Replace Reset-RPY baseline entirely (e.g. assets priors)."""
+        self._rpy_defaults = OverlayUiParams(
+            roll_deg=p.roll_deg,
+            pitch_deg=p.pitch_deg,
+            yaw_deg=p.yaw_deg,
+            height_m=p.height_m,
+            cam_x=p.cam_x,
+            cam_y_left=p.cam_y_left,
         )
 
     def _refresh_rpy_labels(self) -> None:
@@ -240,6 +329,8 @@ class RpyPpControlBar:
         self.pitch_label.config(text=f"{float(self.pitch_var.get()):.1f}°")
         self.yaw_label.config(text=f"{float(self.yaw_var.get()):.1f}°")
         self.height_label.config(text=f"{float(self.height_var.get()):.2f}m")
+        self.cam_x_label.config(text=f"{float(self.cam_x_var.get()):.2f}m")
+        self.cam_y_label.config(text=f"{float(self.cam_y_var.get()):.2f}m")
 
     def _refresh_pp_labels(self) -> None:
         self.pp_kdd_label.config(text=f"{float(self.pp_kdd_var.get()):.2f}")

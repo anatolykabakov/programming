@@ -1,8 +1,6 @@
 package ai.flow.adas;
 
-import android.util.Log;
 import java.util.List;
-import java.util.ArrayList;
 import bag.BagOuterClass;
 import ai.flow.adas.Messages;
 import ai.flow.adas.Imu;
@@ -15,24 +13,6 @@ import ai.flow.adas.Lanes;
  * Утилиты для конвертации protobuf сообщений в bag формат
  */
 public class ProtoUtils {
-    private static final String TAG = "ProtoUtils";
-
-    /**
-     * Конвертирует ZMQMessage в bag.Bag сообщение
-     */
-    public static BagOuterClass.Bag createBagMessage(Messages.ZMQMessage zmqMessage) {
-        BagOuterClass.Bag.Builder bagBuilder = BagOuterClass.Bag.newBuilder();
-
-        // Устанавливаем timestamp
-        com.google.protobuf.Timestamp timestamp = com.google.protobuf.util.Timestamps.fromMillis(zmqMessage.getTimestamp());
-        bagBuilder.setTimestamp(timestamp);
-
-        // Добавляем сообщение
-        bagBuilder.addMessages(zmqMessage);
-
-        return bagBuilder.build();
-    }
-
     /**
      * Конвертирует список ZMQMessage в bag.Bag сообщение
      */
@@ -57,14 +37,6 @@ public class ProtoUtils {
     public static String fixTopicName(String topicName) {
         if (topicName == null) return "";
         return topicName.replace("/", "__");
-    }
-
-    /**
-     * Создает имя bag файла в формате BAG_YYYY_MM_DD_HH_mm_ss
-     */
-    public static String createBagFileName(long timestamp) {
-        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", java.util.Locale.US);
-        return "BAG_" + sdf.format(new java.util.Date(timestamp));
     }
 
     /**
@@ -107,14 +79,6 @@ public class ProtoUtils {
     public static int getMessageSize(Messages.ZMQMessage message) {
         if (message == null) return 0;
         return message.getSerializedSize();
-    }
-
-    /**
-     * Получает размер bag сообщения в байтах
-     */
-    public static int getBagSize(BagOuterClass.Bag bag) {
-        if (bag == null) return 0;
-        return bag.getSerializedSize();
     }
 
     /**
@@ -244,15 +208,6 @@ public class ProtoUtils {
             .build();
     }
 
-    /** Convenience overload without intrinsics. */
-    public static Messages.ZMQMessage createCameraImageMessage(java.util.List<Byte> imageData,
-                                                              int width, int height,
-                                                              String format, int frameId,
-                                                              long timestamp) {
-        return createCameraImageMessage(imageData, width, height, format, frameId, timestamp,
-                0f, 0f, width * 0.5f, height * 0.5f);
-    }
-
     /**
      * Создает Camera Intrinsics сообщение
      */
@@ -350,66 +305,6 @@ public class ProtoUtils {
             .setTopic("vision/lanes")
             .setLaneLines(lanesBuilder.build())
             .build();
-    }
-
-    /** Image-space UV samples for VP camera calib ({@code calibration/lane_uv}). */
-    public static Messages.ZMQMessage createLaneUvMessage(
-            long timestampMs, float[] leftU, float[] leftV, float[] rightU, float[] rightV) {
-        if (leftU == null || leftV == null || rightU == null || rightV == null) {
-            return null;
-        }
-        int nl = Math.min(leftU.length, leftV.length);
-        int nr = Math.min(rightU.length, rightV.length);
-        if (nl < 2 || nr < 2) {
-            return null;
-        }
-        CameraCalibOuter.LaneUv.Builder uv = CameraCalibOuter.LaneUv.newBuilder()
-                .setTimestamp(timestampMs);
-        for (int i = 0; i < nl; i++) {
-            if (!Float.isFinite(leftU[i]) || !Float.isFinite(leftV[i])) {
-                continue;
-            }
-            uv.addLeftUv(CameraCalibOuter.LaneUvPoint.newBuilder()
-                    .setU(leftU[i]).setV(leftV[i]).build());
-        }
-        for (int i = 0; i < nr; i++) {
-            if (!Float.isFinite(rightU[i]) || !Float.isFinite(rightV[i])) {
-                continue;
-            }
-            uv.addRightUv(CameraCalibOuter.LaneUvPoint.newBuilder()
-                    .setU(rightU[i]).setV(rightV[i]).build());
-        }
-        if (uv.getLeftUvCount() < 2 || uv.getRightUvCount() < 2) {
-            return null;
-        }
-        return Messages.ZMQMessage.newBuilder()
-                .setTimestamp(timestampMs)
-                .setTopic("calibration/lane_uv")
-                .setLaneUv(uv.build())
-                .build();
-    }
-
-    /** Live calib (flowpilot-style) → {@code calibration/camera}. */
-    public static Messages.ZMQMessage createCameraCalibMessage(
-            long timestampMs,
-            float rollDeg, float pitchDeg, float yawDeg, float heightM,
-            boolean success, int validBlocks, int calPercent) {
-        CameraCalibOuter.CameraCalibrationState.Builder c =
-                CameraCalibOuter.CameraCalibrationState.newBuilder()
-                        .setTimestamp(timestampMs)
-                        .setRollDeg(rollDeg)
-                        .setPitchDeg(pitchDeg)
-                        .setYawDeg(yawDeg)
-                        .setCameraHeightM(heightM)
-                        .setCalibrationSuccess(success)
-                        .setNUpdates(validBlocks)
-                        .setCalPercent(calPercent)
-                        .setHasVp(false);
-        return Messages.ZMQMessage.newBuilder()
-                .setTimestamp(timestampMs)
-                .setTopic("calibration/camera")
-                .setCameraCalib(c.build())
-                .build();
     }
 
     /** Model pose → {@code model/camera_odometry} for C++ PoseCalibrator. */

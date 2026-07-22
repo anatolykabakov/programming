@@ -36,8 +36,10 @@ inline constexpr const char* kVehicleState = "vehicle/state";
 struct ChassisSample {
   int64_t timestamp_us = 0;
   double speed_mps = 0.0;
-  double steer_rad = 0.0;  // road-wheel angle
-  double yaw_rate = 0.0;   // rad/s
+  double steer_rad = 0.0;           // road-wheel angle [rad]
+  double steering_angle_deg = 0.0;  // steering-wheel angle [deg] (LWI)
+  bool steering_pressed = false;    // driver torque above allowance
+  double yaw_rate = 0.0;            // rad/s
 };
 
 /** Ego-frame path for lane keep (X forward, Y left). */

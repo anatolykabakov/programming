@@ -3,10 +3,10 @@
 # source: car_state.proto
 """Generated protocol buffer code."""
 
+from google.protobuf.internal import builder as _builder
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
-from google.protobuf.internal import builder as _builder
 
 # @@protoc_insertion_point(imports)
 
@@ -17,14 +17,14 @@ DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
     b'\n\x0f\x63\x61r_state.proto\x12\x0c\x61i.flow.adas"=\n\x0bWheelSpeeds\x12\n\n\x02\x66l\x18\x01 \x01(\x02\x12\n\n\x02\x66r\x18\x02 \x01(\x02\x12\n\n\x02rl\x18\x03 \x01(\x02\x12\n\n\x02rr\x18\x04 \x01(\x02"\xd0\x04\n\x08\x43\x61rState\x12\x11\n\ttimestamp\x18\x01 \x01(\x03\x12\r\n\x05v_ego\x18\x02 \x01(\x02\x12\x11\n\tv_ego_raw\x18\x03 \x01(\x02\x12\r\n\x05\x61_ego\x18\x04 \x01(\x02\x12\x12\n\nstandstill\x18\x05 \x01(\x08\x12/\n\x0cwheel_speeds\x18\x06 \x01(\x0b\x32\x19.ai.flow.adas.WheelSpeeds\x12\x1a\n\x12steering_angle_deg\x18\x07 \x01(\x02\x12\x19\n\x11steering_rate_deg\x18\x08 \x01(\x02\x12\x17\n\x0fsteering_torque\x18\t \x01(\x02\x12\x18\n\x10steering_pressed\x18\n \x01(\x08\x12\x10\n\x08yaw_rate\x18\x0b \x01(\x02\x12\x0b\n\x03gas\x18\x0c \x01(\x02\x12\x13\n\x0bgas_pressed\x18\r \x01(\x08\x12\r\n\x05\x62rake\x18\x0e \x01(\x02\x12\x15\n\rbrake_pressed\x18\x0f \x01(\x08\x12\x0c\n\x04gear\x18\x10 \x01(\x05\x12\x1a\n\x12\x63ruise_main_switch\x18\x11 \x01(\x08\x12\x12\n\ncruise_set\x18\x12 \x01(\x08\x12\x15\n\rcruise_resume\x18\x13 \x01(\x08\x12\x15\n\rcruise_cancel\x18\x14 \x01(\x08\x12\x14\n\x0c\x63ruise_accel\x18\x15 \x01(\x08\x12\x14\n\x0c\x63ruise_decel\x18\x16 \x01(\x08\x12\x19\n\x11\x63ruise_gap_adjust\x18\x17 \x01(\x05\x12\x12\n\nacc_status\x18\x18 \x01(\x05\x12\x18\n\x10\x63ruise_available\x18\x19 \x01(\x08\x12\x16\n\x0e\x63ruise_engaged\x18\x1a \x01(\x08\x42\x0f\x42\rCarStateOuterb\x06proto3'
 )
 
-_globals = globals()
-_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "car_state_pb2", _globals)
+_builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "car_state_pb2", globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
-    _globals["DESCRIPTOR"]._options = None
-    _globals["DESCRIPTOR"]._serialized_options = b"B\rCarStateOuter"
-    _globals["_WHEELSPEEDS"]._serialized_start = 33
-    _globals["_WHEELSPEEDS"]._serialized_end = 94
-    _globals["_CARSTATE"]._serialized_start = 97
-    _globals["_CARSTATE"]._serialized_end = 689
+
+    DESCRIPTOR._options = None
+    DESCRIPTOR._serialized_options = b"B\rCarStateOuter"
+    _WHEELSPEEDS._serialized_start = 33
+    _WHEELSPEEDS._serialized_end = 94
+    _CARSTATE._serialized_start = 97
+    _CARSTATE._serialized_end = 689
 # @@protoc_insertion_point(module_scope)

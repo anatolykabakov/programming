@@ -224,7 +224,10 @@ class OnlineLocalizer:
         self.gps_meas_noise = float(gps_meas_noise)
         self.imu_every_step = bool(imu_every_step)
         self._loc = cpp.OnlineLocalizer(
-            float(wheelbase), float(gps_noise_pos), float(gps_update_interval), bool(imu_every_step)
+            float(wheelbase),
+            float(gps_noise_pos),
+            float(gps_update_interval),
+            bool(imu_every_step),
         )
         self.buffers = TrajectoryBuffers()
         self.ekf: Optional[VehicleEKF] = None

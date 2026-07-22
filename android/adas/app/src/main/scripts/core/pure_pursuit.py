@@ -218,7 +218,14 @@ def draw_pure_pursuit(
     circ_x = cx_ra + ld * np.cos(thetas)
     circ_y = cy_ra + ld * np.sin(thetas)  # Y left
     circ_pts = project_iso_xyz(
-        circ_x, circ_y, np.zeros_like(circ_x), geom, w, h, x_min=0.3, y_sign=y_sign_for_project
+        circ_x,
+        circ_y,
+        np.zeros_like(circ_x),
+        geom,
+        w,
+        h,
+        x_min=0.3,
+        y_sign=y_sign_for_project,
     )
     if len(circ_pts) >= 2:
         for a, b in zip(circ_pts, circ_pts[1:]):
@@ -232,7 +239,14 @@ def draw_pure_pursuit(
     arc_x = arc_ra[:, 0] + cx_ra
     arc_y = arc_ra[:, 1] + cy_ra
     arc_pts = project_iso_xyz(
-        arc_x, arc_y, np.zeros_like(arc_x), geom, w, h, x_min=0.3, y_sign=y_sign_for_project
+        arc_x,
+        arc_y,
+        np.zeros_like(arc_x),
+        geom,
+        w,
+        h,
+        x_min=0.3,
+        y_sign=y_sign_for_project,
     )
     if len(arc_pts) >= 2:
         for a, b in zip(arc_pts, arc_pts[1:]):

@@ -13,6 +13,9 @@ Lane source:
 
 Usage:
   python3 -m sim.main --controller pure_pursuit --show --lanes supercombo --compare-gt
+  python3 -m sim.main --map SCSC --traffic-density 0 --show   # straights + gentle curves (PP-friendly)
+  python3 -m sim.main --map CCCC --show                       # curves only
+  python3 -m sim.main --map O --show                          # roundabout (constant κ — weak PP test)
   python3 -m sim.main --lanes gt --vp-source gt --show
   python3 -m sim.main --lanes supercombo --show --cv-show   # legacy OpenCV windows
 """
@@ -95,13 +98,19 @@ class MetaDriveSimulator:
         self.out_dir = Path(args.out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
+        map_spec = args.map
+        if isinstance(map_spec, str) and map_spec.isdigit():
+            map_spec = int(map_spec)
+
         config = {
             "use_render": not args.no_render,
             "manual_control": False,
             "num_scenarios": args.num_scenarios,
             "start_seed": args.seed,
+            # Empty road for LK / vision tests
             "traffic_density": args.traffic_density,
             "random_traffic": args.traffic_density > 0,
+            "accident_prob": 0.0,
             "decision_repeat": 1,
             "physics_world_step_size": 0.01,
             "horizon": 1_000_000,
@@ -109,6 +118,15 @@ class MetaDriveSimulator:
             "show_terrain": True,
             "sensors": dict(rgb=[RGBCamera, args.width, args.height]),
             "vehicle_config": {"image_source": "rgb"},
+            # Map: PG block sequence. Default SCSC = straights + gentle curves (good for PP).
+            # Avoid O (roundabout): nearly constant curvature is a weak Pure Pursuit test.
+            "map": map_spec,
+            "map_config": {
+                "lane_num": args.lane_num,
+                "lane_width": 3.5,
+                "exit_length": 50,
+            },
+            "random_spawn_lane_index": False,
         }
 
         self.env = MetaDriveEnv(config)
@@ -292,7 +310,8 @@ class MetaDriveSimulator:
         traj_tag = f"  traj={bool(self.ekf_tracker)}"
         cpp_tag = f"  cpp={'ON' if cpp_available() else 'off'}"
         print(
-            f"Controller={args.controller}  lanes={args.lanes}  speed={args.speed} m/s  "
+            f"Controller={args.controller}  lanes={args.lanes}  map={args.map!r}  "
+            f"lane_num={args.lane_num}  speed={args.speed:.2f} m/s ({args.speed * 3.6:.0f} km/h)  "
             f"traffic_density={args.traffic_density}  "
             f"vp={self.vp_enabled}  show={args.show}  save_every={args.save_every}  "
             f"overlay={args.overlay}{cmp_tag}{traj_tag}{cpp_tag}"
@@ -376,6 +395,13 @@ class MetaDriveSimulator:
     ) -> None:
         if not self.vp_enabled:
             return
+        # On curves, image Hough VP is unreliable (yaw drifts to tens of degrees)
+        # and corrupts overlay; keep the first good straight-road estimate.
+        if (
+            bool(getattr(self.args, "vp_lock_after_calib", True))
+            and self.vp_calib.calibration_success
+        ):
+            return
         K = self.camera_params.intrinsics
         line_l = line_r = None
         if self.args.vp_source == "gt":
@@ -389,12 +415,24 @@ class MetaDriveSimulator:
         if line_l is None or line_r is None:
             return
         if self.vp_calib.update_from_lines(line_l, line_r, K):
-            self.pitch_deg = self.vp_calib.estimated_pitch_deg
-            self.yaw_deg = self.vp_calib.estimated_yaw_deg
+            new_p = float(self.vp_calib.estimated_pitch_deg)
+            new_y = float(self.vp_calib.estimated_yaw_deg)
+            # Reject wild jumps vs MetaDrive mount (typical on curve Hough failures).
+            if abs(new_y - self._init_yaw) > 3.0 or abs(new_p - self._init_pitch) > 4.0:
+                print(
+                    f"VP reject: P={new_p:.2f}° Y={new_y:.2f}° "
+                    f"(init P={self._init_pitch:.2f} Y={self._init_yaw:.2f}) — keep previous"
+                )
+                self.vp_calib.estimated_pitch_deg = self.pitch_deg
+                self.vp_calib.estimated_yaw_deg = self.yaw_deg
+                return
+            self.pitch_deg = new_p
+            self.yaw_deg = new_y
             self._save_calib()
             print(
                 f"VP calib #{self.vp_calib.n_updates}: "
                 f"pitch={self.pitch_deg:.2f}° yaw={self.yaw_deg:.2f}°"
+                + ("  [locked]" if self.vp_calib.calibration_success else "")
             )
             if self._ui is not None:
                 self._ui.sync_rpy_from_sim()
@@ -414,6 +452,8 @@ class MetaDriveSimulator:
         self.pitch_deg = float(p.pitch_deg)
         self.yaw_deg = float(p.yaw_deg)
         self.camera_height = float(p.height_m)
+        self.cam_x = float(p.cam_x)
+        self.cam_y_left = float(p.cam_y_left)
         # Keep VP estimates in sync with manual override
         self.vp_calib.estimated_pitch_deg = self.pitch_deg
         self.vp_calib.estimated_yaw_deg = self.yaw_deg
@@ -496,7 +536,13 @@ class MetaDriveSimulator:
             y_sign=-1.0,
         )
         if len(sc_lanes["left_road"]) < 2 or len(sc_lanes["right_road"]) < 2:
-            return gt_lanes  # fallback
+            # Do NOT fall back to GT mid-curve — that jumps the PP target and saturates δ.
+            return {
+                **gt_lanes,
+                "left_road": sc_lanes["left_road"],
+                "right_road": sc_lanes["right_road"],
+                "_sc_incomplete": True,
+            }
         return {
             **gt_lanes,
             "left_road": sc_lanes["left_road"],
@@ -512,13 +558,14 @@ class MetaDriveSimulator:
         if not isinstance(self.controller, LaneKeepController):
             return None, self.controller.get_control(speed, lanes)
 
-        # Supercombo plan path (optional). Default PP uses lane centerline via compute().
-        if (
+        # Prefer plan when lanes incomplete (one side drops on curves) or --pp-on plan.
+        use_plan = (
             self.args.lanes == "supercombo"
             and sc is not None
             and self.controller.mode == "pure_pursuit"
-            and self.args.pp_on == "plan"
-        ):
+            and (self.args.pp_on == "plan" or bool(lanes.get("_sc_incomplete")))
+        )
+        if use_plan:
             poly = plan_to_polyline_ego(
                 sc.plan.x,
                 sc.plan.y,
@@ -1072,13 +1119,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--bev", action="store_true", default=True, help="BEV inset on overlay")
     p.add_argument("--no-bev", action="store_false", dest="bev")
 
-    p.add_argument("--speed", type=float, default=12.0, help="Target speed m/s")
+    p.add_argument(
+        "--speed",
+        type=float,
+        default=30.0 / 3.6,
+        help="Target speed m/s (default 30 km/h ≈ 8.33 m/s)",
+    )
     p.add_argument("--max-steer-deg", type=float, default=40.0)
     p.add_argument("--wheelbase", type=float, default=2.636)
 
-    # Pure pursuit (interactive_visualizer defaults)
-    p.add_argument("--pp-k-dd", type=float, default=0.4)
-    p.add_argument("--pp-ld-min", type=float, default=3.0)
+    # Pure pursuit — Ld must cover curve entry at ~30 km/h (was ld_min=3 → δ saturates)
+    p.add_argument("--pp-k-dd", type=float, default=0.6)
+    p.add_argument("--pp-ld-min", type=float, default=6.0)
     p.add_argument("--pp-ld-max", type=float, default=20.0)
     p.add_argument("--pp-shift", type=float, default=1.40)
 
@@ -1117,6 +1169,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="VP lines from Hough on camera (image) or MetaDrive GT lanes (gt)",
     )
     p.add_argument("--vp-history", type=int, default=50, help="VP samples before commit")
+    p.add_argument(
+        "--vp-lock-after-calib",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Freeze VP after first successful calib (default). "
+        "Hough VP on curves drifts yaw and breaks overlay; disable with --no-vp-lock-after-calib.",
+    )
     p.add_argument("--vp-debug", action="store_true", help="Draw VP lines / intersection")
     p.add_argument(
         "--calib",
@@ -1128,10 +1187,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--num-scenarios", type=int, default=100)
     p.add_argument(
+        "--map",
+        type=str,
+        default="SCSC",
+        help="MetaDrive PG map (block letters). Default SCSC: Straight+Curve×2 — "
+        "straights and smooth turns for Pure Pursuit. "
+        "C=curve, S=straight, O=roundabout (constant κ, poor PP test). "
+        "Or integer = random N blocks.",
+    )
+    p.add_argument(
+        "--lane-num",
+        type=int,
+        default=3,
+        help="Number of lanes on the map (default 3)",
+    )
+    p.add_argument(
         "--traffic-density",
         type=float,
         default=0.0,
-        help="Background traffic density (0 = no other vehicles)",
+        help="Background traffic density (0 = no other vehicles, default)",
     )
     p.add_argument("--width", type=int, default=640)
     p.add_argument("--height", type=int, default=480)

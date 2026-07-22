@@ -65,14 +65,26 @@ struct AdasRuntimeConfig {
 
   double wheelbase_m = 2.636;
   double steer_ratio = 15.7;
-  double pitch0_deg = -6.0;
-  double yaw0_deg = 0.0;
+  /** Road-wheel angle that maps to full ±max_torque_cnm (smaller → stronger assist). */
+  double max_steer_deg = 8.0;
+  /** Cap for controls/steer (VW HCA / panda clamp at 300). */
+  double max_torque_cnm = 300.0;
+  /** Flowpilot VW LatControlPID defaults (angle error [deg] → torque [-1,1]). */
+  double lat_pid_kp = 0.6;
+  double lat_pid_ki = 0.2;
+  double lat_pid_kf = 0.00006;
+  double pitch0_deg = 0.76;
+  double yaw0_deg = 1.56;
   double roll0_deg = 0.0;
-  double camera_height_m = 1.40;
+  double camera_height_m = 0.7;
   double fx = 930.0;
   double fy = 930.0;
   double cx = 640.0;
   double cy = 360.0;
+
+  /** Native ZMQ bind endpoints (must match Java AdasConfig zmq.*). */
+  std::string zmq_endpoint_in = "tcp://127.0.0.1:5555";
+  std::string zmq_endpoint_out = "tcp://127.0.0.1:5556";
 };
 
 /**

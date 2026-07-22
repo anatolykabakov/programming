@@ -21,8 +21,9 @@ struct CarControllerParams {
   static constexpr int STEER_DRIVER_MULTIPLIER = 3;
   static constexpr int STEER_DRIVER_FACTOR = 1;
   static constexpr int STEER_DRIVER_ALLOWANCE = 80;  // cNm
-  static constexpr int STEER_DELTA_UP = 4;
-  static constexpr int STEER_DELTA_DOWN = 10;
+  // Must match panda safety_volkswagen_mqb.h SteeringLimits (else TX → rejected/src=0xC0).
+  static constexpr int STEER_DELTA_UP = 4;     // safety max_rate_up
+  static constexpr int STEER_DELTA_DOWN = 10;  // safety max_rate_down
 
   // LDW_Texte values (MQB)
   static constexpr int LDW_MSG_NONE = 0;

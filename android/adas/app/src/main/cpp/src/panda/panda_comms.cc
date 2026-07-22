@@ -6,6 +6,23 @@
 #include "utils/logger.h"
 
 #define USB_CTRL_TIMEOUT_MS 100
+// Hard cap so LIBUSB_ERROR_IO / TIMEOUT cannot busy-loop forever (hangs splash on Android).
+#define USB_MAX_RETRIES 5
+
+static bool is_fatal_usb_error(int err)
+{
+  switch (err) {
+    case LIBUSB_ERROR_IO:
+    case LIBUSB_ERROR_NO_DEVICE:
+    case LIBUSB_ERROR_NOT_FOUND:
+    case LIBUSB_ERROR_PIPE:
+    case LIBUSB_ERROR_NO_MEM:
+    case LIBUSB_ERROR_OTHER:
+      return true;
+    default:
+      return false;
+  }
+}
 
 static int init_usb_ctx(libusb_context** context)
 {
@@ -246,15 +263,17 @@ finish:
 void PandaUsbHandle::handle_usb_issue(int err, const char func[])
 {
   LOGE("usb error %d \"%s\" in %s", err, libusb_strerror((enum libusb_error)err), func);
-  if (err == LIBUSB_ERROR_NO_DEVICE) {
-    LOGE("lost connection");
+  if (is_fatal_usb_error(err)) {
+    LOGE("lost connection (fatal usb error %d in %s)", err, func);
     connected = false;
+    comms_healthy = false;
   }
 }
 
 int PandaUsbHandle::control_write(uint8_t bRequest, uint16_t wValue, uint16_t wIndex, unsigned int timeout)
 {
   int err;
+  int attempts = 0;
   const uint8_t bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE;
   if (timeout == 0) {
     timeout = USB_CTRL_TIMEOUT_MS;
@@ -267,9 +286,17 @@ int PandaUsbHandle::control_write(uint8_t bRequest, uint16_t wValue, uint16_t wI
   std::lock_guard lk(hw_lock);
   do {
     err = libusb_control_transfer(dev_handle, bmRequestType, bRequest, wValue, wIndex, NULL, 0, timeout);
-    if (err < 0)
+    if (err < 0) {
       handle_usb_issue(err, __func__);
-  } while (err < 0 && connected);
+      ++attempts;
+    }
+  } while (err < 0 && connected && attempts < USB_MAX_RETRIES);
+
+  if (err < 0 && connected) {
+    LOGE("control_write giving up after %d retries (last err=%d)", attempts, err);
+    connected = false;
+    comms_healthy = false;
+  }
 
   return err;
 }
@@ -278,6 +305,7 @@ int PandaUsbHandle::control_read(uint8_t bRequest, uint16_t wValue, uint16_t wIn
                                  uint16_t wLength, unsigned int timeout)
 {
   int err;
+  int attempts = 0;
   const uint8_t bmRequestType = LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE;
   if (timeout == 0) {
     timeout = USB_CTRL_TIMEOUT_MS;
@@ -290,9 +318,17 @@ int PandaUsbHandle::control_read(uint8_t bRequest, uint16_t wValue, uint16_t wIn
   std::lock_guard lk(hw_lock);
   do {
     err = libusb_control_transfer(dev_handle, bmRequestType, bRequest, wValue, wIndex, data, wLength, timeout);
-    if (err < 0)
+    if (err < 0) {
       handle_usb_issue(err, __func__);
-  } while (err < 0 && connected);
+      ++attempts;
+    }
+  } while (err < 0 && connected && attempts < USB_MAX_RETRIES);
+
+  if (err < 0 && connected) {
+    LOGE("control_read giving up after %d retries (last err=%d)", attempts, err);
+    connected = false;
+    comms_healthy = false;
+  }
 
   return err;
 }
@@ -301,6 +337,7 @@ int PandaUsbHandle::bulk_write(unsigned char endpoint, unsigned char* data, int 
 {
   int err;
   int transferred = 0;
+  int attempts = 0;
 
   if (!connected) {
     return 0;
@@ -317,8 +354,15 @@ int PandaUsbHandle::bulk_write(unsigned char endpoint, unsigned char* data, int 
       break;
     } else if (err != 0 || length != transferred) {
       handle_usb_issue(err, __func__);
+      ++attempts;
     }
-  } while (err != 0 && connected);
+  } while (err != 0 && connected && attempts < USB_MAX_RETRIES);
+
+  if (err != 0 && err != LIBUSB_ERROR_TIMEOUT && connected) {
+    LOGE("bulk_write giving up after %d retries (last err=%d)", attempts, err);
+    connected = false;
+    comms_healthy = false;
+  }
 
   return transferred;
 }
@@ -327,6 +371,7 @@ int PandaUsbHandle::bulk_read(unsigned char endpoint, unsigned char* data, int l
 {
   int err;
   int transferred = 0;
+  int attempts = 0;
 
   if (!connected) {
     return 0;
@@ -342,11 +387,19 @@ int PandaUsbHandle::bulk_read(unsigned char endpoint, unsigned char* data, int l
     } else if (err == LIBUSB_ERROR_OVERFLOW) {
       comms_healthy = false;
       // LOGE_100("overflow got 0x%x", transferred);
+      break;
     } else if (err != 0) {
       handle_usb_issue(err, __func__);
+      ++attempts;
     }
 
-  } while (err != 0 && connected);
+  } while (err != 0 && connected && attempts < USB_MAX_RETRIES);
+
+  if (err != 0 && err != LIBUSB_ERROR_TIMEOUT && err != LIBUSB_ERROR_OVERFLOW && connected) {
+    LOGE("bulk_read giving up after %d retries (last err=%d)", attempts, err);
+    connected = false;
+    comms_healthy = false;
+  }
 
   return transferred;
 }

@@ -5,7 +5,11 @@
 
 namespace adas {
 
-/** Build ego centerline (X fwd, Y left) from supercombo LaneLines proto. */
+/**
+ * Ego path for lane keep (X fwd, Y left), flowpilot/dp style:
+ *   base = best PLAN (plan_x/y); optional blend toward near-lane mid by lane probs.
+ * {@code min_lane_prob} zeros a lane's contribution below the threshold.
+ */
 LanePathMsg laneLinesToPath(const ai::flow::adas::LaneLines& ll, float min_lane_prob = 0.3f);
 
 /** CarState → chassis sample for lane-keep / localization. */

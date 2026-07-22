@@ -279,7 +279,13 @@ class SupercomboBev:
             )
             ins = self._session.get_inputs()
             outs = self._session.get_outputs()
-            self._names = (ins[0].name, ins[1].name, ins[2].name, ins[3].name, outs[0].name)
+            self._names = (
+                ins[0].name,
+                ins[1].name,
+                ins[2].name,
+                ins[3].name,
+                outs[0].name,
+            )
             self.error = None
             return True
         except Exception as e:

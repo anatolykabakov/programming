@@ -232,6 +232,27 @@ class VanishingPointCalibrator:
             self._svc.reset()
             self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
 
+    def set_estimate(
+        self,
+        pitch_deg: float,
+        yaw_deg: float,
+        *,
+        clear_history: bool = True,
+    ) -> None:
+        """Seed / override VP estimate (e.g. from UI sliders). Optionally flush pending history."""
+        self.estimated_pitch_deg = float(pitch_deg)
+        self.estimated_yaw_deg = float(yaw_deg)
+        if self._svc is None:
+            return
+        self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
+        if clear_history:
+            self._svc.reset()
+            self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
+            self.calibration_success = False
+            self.n_updates = 0
+            self.pitch_yaw_history.clear()
+            self.last_vp = None
+
     def update_from_lines(self, line_left: Line2, line_right: Line2, K: np.ndarray) -> bool:
         """Sample v=m*u+c into UV polylines and feed C++ calibrator."""
         K = np.asarray(K, dtype=np.float64)

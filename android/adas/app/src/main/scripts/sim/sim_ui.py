@@ -81,7 +81,10 @@ class SimLiveUi:
         ).pack(side=tk.LEFT, padx=6)
         self.gt_lanes_var = tk.BooleanVar(value=bool(self.args.draw_gt_lanes))
         ttk.Checkbutton(
-            control, text="GT lanes", variable=self.gt_lanes_var, command=self._on_gt_lanes
+            control,
+            text="GT lanes",
+            variable=self.gt_lanes_var,
+            command=self._on_gt_lanes,
         ).pack(side=tk.LEFT, padx=4)
         self.bev_var = tk.BooleanVar(value=False)  # bag-style default
         ttk.Checkbutton(control, text="BEV inset", variable=self.bev_var).pack(side=tk.LEFT, padx=4)
@@ -99,6 +102,8 @@ class SimLiveUi:
             pitch_deg=sim.pitch_deg,
             yaw_deg=sim.yaw_deg,
             height_m=sim.camera_height,
+            cam_x=sim.cam_x,
+            cam_y_left=sim.cam_y_left,
             pp_k_dd=float(self.args.pp_k_dd),
             pp_ld_min=float(self.args.pp_ld_min),
             pp_ld_max=float(self.args.pp_ld_max),
@@ -202,6 +207,8 @@ class SimLiveUi:
             pitch_deg=s.pitch_deg,
             yaw_deg=s.yaw_deg,
             height_m=s.camera_height,
+            cam_x=s.cam_x,
+            cam_y_left=s.cam_y_left,
             notify=False,
         )
         self._update_vp_status()

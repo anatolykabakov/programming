@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">adas</string>
+    <string name="log_toggle">Toggle logging</string>
 </resources>

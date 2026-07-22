@@ -338,7 +338,13 @@ STREAMS: list[tuple[str, str, str, str, Callable]] = [
     ("panda", "health", "panda/health", "panda", process_panda),
     ("gps", "data", "sensors/gps/data", "gps/data", process_gps_data),
     ("vision", "lanes", "vision/lanes", "vision/lanes", process_lanes),
-    ("camera", "intrinsics", "camera/intrinsics", "camera/intrinsics", process_intrinsics),
+    (
+        "camera",
+        "intrinsics",
+        "camera/intrinsics",
+        "camera/intrinsics",
+        process_intrinsics,
+    ),
     ("can", "rx", "can/rx", "can/rx", process_can),
 ]
 

@@ -12,9 +12,8 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.view.TextureView;
-import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.Toast;
-import android.content.SharedPreferences;
 import android.util.Log;
 
 import java.io.File;
@@ -26,8 +25,8 @@ public class MainActivity extends AppCompatActivity {
     public static final String LOG_TAG = "MainActivity";
     private static final int REQ_PERMISSIONS = 1;
 
-    private Button startLoggingButton = null;
-    private Button stopLoggingButton = null;
+    private ImageButton loggingToggleButton = null;
+    private boolean loggingActive = false;
     private TextureView mImageView = null;
 
     CameraHandler cameraHandler = null;
@@ -39,21 +38,16 @@ public class MainActivity extends AppCompatActivity {
     private boolean cameraStarted = false;
     private boolean storagePromptShown = false;
 
-    private SharedPreferences preferences;
-    private static final String PREFS_NAME = "adas_prefs";
-
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        startLoggingButton = findViewById(R.id.startLoggingButton);
-        stopLoggingButton = findViewById(R.id.stopLoggingButton);
+        loggingToggleButton = findViewById(R.id.loggingToggleButton);
         mImageView = findViewById(R.id.textureView);
         laneOverlay = findViewById(R.id.laneOverlay);
 
-        preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         cameraHandler = new CameraHandler(getApplication().getApplicationContext(), mImageView);
         gpsHandler = new GPSHandler(this);
         imuHandler = new IMUHandler(this);
@@ -63,11 +57,12 @@ public class MainActivity extends AppCompatActivity {
                 config.fx, config.fy, config.cx, config.cy,
                 cameraHandler.W > 0 ? cameraHandler.W : config.frameW,
                 cameraHandler.H > 0 ? cameraHandler.H : config.frameH);
-        laneOverlay.setCameraHeight(config.camZ);
-        laneOverlay.setWaypointShift(config.camX);
+        laneOverlay.setExtrinsics(
+                config.camX, config.camY, config.camZ,
+                config.rollDeg, config.pitchDeg, config.yawDeg);
         laneOverlay.setSteerRatio(config.steerRatio);
 
-        // PP / steer / live calib HUD from native via ZMQ OUT (:5556)
+        // PP / steer / live calib HUD from native via ZMQ OUT
         ZMQBridgeService.setOutboundListener((topic, msg) -> {
             if (laneOverlay == null) {
                 return;
@@ -92,11 +87,13 @@ public class MainActivity extends AppCompatActivity {
                 laneOverlay.setCameraCalib(
                         (float) c.getPitchDeg(),
                         (float) c.getYawDeg(),
-                        (float) c.getRollDeg(),
                         (float) c.getCameraHeightM(),
                         c.getCalibrationSuccess(),
                         c.getCalPercent() > 0 ? c.getCalPercent()
                                 : Math.min(100, c.getNUpdates() * 20));
+            }
+            if (msg.hasPandaHealth()) {
+                laneOverlay.setControlsAllowed(msg.getPandaHealth().getControlsAllowed());
             }
         });
 
@@ -141,8 +138,16 @@ public class MainActivity extends AppCompatActivity {
         });
 
         requestRuntimePermissionsIfNeeded();
+        updateLoggingButtonUi();
 
-        startLoggingButton.setOnClickListener(v -> {
+        loggingToggleButton.setOnClickListener(v -> {
+            if (loggingActive) {
+                Logger.getInstance().stop();
+                loggingActive = false;
+                updateLoggingButtonUi();
+                Toast.makeText(MainActivity.this, "Logging stopped", Toast.LENGTH_SHORT).show();
+                return;
+            }
             Log.i(LOG_TAG, "Starting logging...");
             maybePromptStorageAccess();
             startCameraIfNeeded(mImageView.getWidth(), mImageView.getHeight());
@@ -153,18 +158,23 @@ public class MainActivity extends AppCompatActivity {
             if (cameraHandler != null) {
                 cameraHandler.ensureBagIntrinsicsLogged();
             }
-
-            startLoggingButton.setEnabled(false);
-            stopLoggingButton.setEnabled(true);
-            Toast.makeText(MainActivity.this, "📹 Logging Started", Toast.LENGTH_SHORT).show();
+            loggingActive = true;
+            updateLoggingButtonUi();
+            Toast.makeText(MainActivity.this, "Logging started", Toast.LENGTH_SHORT).show();
         });
+    }
 
-        stopLoggingButton.setOnClickListener(v -> {
-            Logger.getInstance().stop();
-            startLoggingButton.setEnabled(true);
-            stopLoggingButton.setEnabled(false);
-            Toast.makeText(MainActivity.this, "⏹ Logging Stopped", Toast.LENGTH_SHORT).show();
-        });
+    private void updateLoggingButtonUi() {
+        if (loggingToggleButton == null) {
+            return;
+        }
+        if (loggingActive) {
+            loggingToggleButton.setBackgroundResource(R.drawable.bg_log_fab_recording);
+            loggingToggleButton.setImageResource(R.drawable.ic_log_stop);
+        } else {
+            loggingToggleButton.setBackgroundResource(R.drawable.bg_log_fab);
+            loggingToggleButton.setImageResource(R.drawable.ic_log_rec);
+        }
     }
 
     @Override

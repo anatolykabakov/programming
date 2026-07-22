@@ -1,6 +1,6 @@
 ADAS assets (app/src/main/assets)
 
-  config.json       — node feature flags + vehicle + camera calib priors
+  config.json       — node flags, vehicle, camera priors, zmq.endpoint_in/out
   supercombo.onnx   — openpilot supercombo (bundled at assets root)
   vw_mqb_2010.dbc   — Golf 7 / MQB CAN DB
 

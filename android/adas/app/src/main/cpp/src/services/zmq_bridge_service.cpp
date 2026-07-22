@@ -49,8 +49,11 @@ void ZmqBridgeService::zmqPollTimerCallback()
 {
   if (poll_items_.empty())
     return;
-  const auto n = zmq::poll(poll_items_.data(), poll_items_.size(), std::chrono::milliseconds(1));
-  if (n > 0 && (poll_items_[0].revents & ZMQ_POLLIN)) {
+  // Drain inbound burst (vision/lanes + imu); one recv/10ms was starving lane keep.
+  for (int i = 0; i < 64; ++i) {
+    const auto n = zmq::poll(poll_items_.data(), poll_items_.size(), std::chrono::milliseconds(0));
+    if (n <= 0 || !(poll_items_[0].revents & ZMQ_POLLIN))
+      break;
     processInbound();
   }
 }

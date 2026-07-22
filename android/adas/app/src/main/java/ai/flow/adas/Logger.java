@@ -1,32 +1,25 @@
 package ai.flow.adas;
 
 import android.util.Log;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Rect;
-import android.graphics.YuvImage;
+
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ByteArrayOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Session file logger via {@link BagLogger} message queues.
+ * Does not send on the wire — use {@link ZMQBridgeService#publishToNative} for native.
+ */
 public class Logger {
     private static final String TAG = "Logger";
 
     private static volatile Logger instance;
     private static final Object lock = new Object();
 
-    private AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean running = new AtomicBoolean(false);
     private File logDirectory;
-    private Map<String, FileOutputStream> logFiles = new HashMap<>();
-
-    // Bag logger для protobuf сообщений
     private BagLogger bagLogger;
 
     private Logger() {
@@ -67,7 +60,6 @@ public class Logger {
         logDirectory = dir;
         running.set(true);
 
-        // Same session directory for bag topics (camera / lanes / can / panda / …)
         bagLogger = BagLogger.getInstance();
         bagLogger.startInDirectory(dir);
 
@@ -75,165 +67,30 @@ public class Logger {
     }
 
     public void stop() {
-        if (!running.get()) return;
+        if (!running.get()) {
+            return;
+        }
 
         running.set(false);
 
-        for (FileOutputStream fos : logFiles.values()) {
-            try {
-                fos.close();
-            } catch (IOException e) {
-                Log.e(TAG, "Error closing log file", e);
-            }
-        }
-        logFiles.clear();
-
-        // Останавливаем bag logger
         if (bagLogger != null) {
             bagLogger.stop();
             bagLogger = null;
         }
 
-        Log.i(TAG, "Logger stopped. Log directory preserved: " + (logDirectory != null ? logDirectory.getAbsolutePath() : "null"));
-    }
-
-
-    private void logToFile(String filename, String data) {
-        try {
-            FileOutputStream fos = logFiles.get(filename);
-            if (fos == null) {
-                File file = new File(logDirectory, filename + ".txt");
-                fos = new FileOutputStream(file, true);
-                logFiles.put(filename, fos);
-                Log.i(TAG, "Creating new log file: " + file.getAbsolutePath());
-            }
-
-            fos.write((data + "\n").getBytes());
-            fos.flush();
-            Log.d(TAG, "Successfully wrote to " + filename + ".txt: " + data);
-        } catch (IOException e) {
-            Log.e(TAG, "Error writing to " + filename + ".txt", e);
-        }
-    }
-
-    public void logGPS(long timestamp, double latitude, double longitude, double altitude, float speed, float bearing, float accuracy) {
-        if (!running.get()) return;
-        String logEntry = String.format(Locale.US, "%d, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f",
-            timestamp, latitude, longitude, altitude, speed, bearing, accuracy);
-        logToFile("gps", logEntry);
-    }
-
-    public void logIMU(long timestamp, float ax, float ay, float az, float gx, float gy, float gz,
-                       float mx, float my, float mz) {
-        if (!running.get()) return;
-        String logEntry = String.format(Locale.US, "%d, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f",
-            timestamp, ax, ay, az, gx, gy, gz, mx, my, mz);
-        logToFile("imu", logEntry);
-    }
-
-    public void logCAN(String data) {
-        if (!running.get()) return;
-        logToFile("can_frames", data);
-    }
-
-    public void logPandaHealth(String data) {
-        if (!running.get()) return;
-        logToFile("panda_health", data);
-    }
-
-    public void logCameraImage(long timestamp, Bitmap bitmap) {
-        logCameraImage(timestamp, bitmap, "jpg");
-    }
-
-    public void logCameraImage(long timestamp, Bitmap bitmap, String format) {
-        if (!running.get()) return;
-        try {
-            File cameraDir = new File(logDirectory, "camera");
-            if (!cameraDir.exists()) {
-                boolean created = cameraDir.mkdirs();
-                Log.d(TAG, "Created camera directory: " + cameraDir.getAbsolutePath() + ", success: " + created);
-            }
-
-            File imageFile = new File(cameraDir, timestamp + "." + format.toLowerCase());
-            try (FileOutputStream fos = new FileOutputStream(imageFile)) {
-                boolean success;
-
-                if ("png".equals(format.toLowerCase())) {
-                    success = bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
-                } else {
-                    success = bitmap.compress(Bitmap.CompressFormat.JPEG, 95, fos);
-                }
-
-                Log.d(TAG, "Saved camera image: " + imageFile.getName() + ", success: " + success + ", size: " + imageFile.length() + " bytes");
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving camera image", e);
-        }
-    }
-
-    public void logCameraIntrinsics(String intrinsicsData) {
-        if (!running.get()) return;
-        try {
-            File cameraDir = new File(logDirectory, "camera");
-            if (!cameraDir.exists()) {
-                cameraDir.mkdirs();
-            }
-
-            File intrinsicsFile = new File(cameraDir, "intrinsics.txt");
-            try (FileOutputStream fos = new FileOutputStream(intrinsicsFile)) {
-                fos.write(intrinsicsData.getBytes());
-                Log.d(TAG, "Saved camera intrinsics to " + intrinsicsFile.getName());
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving camera intrinsics", e);
-        }
+        Log.i(TAG, "Logger stopped. Log directory preserved: "
+                + (logDirectory != null ? logDirectory.getAbsolutePath() : "null"));
     }
 
     public boolean isRunning() {
         return running.get();
     }
 
-    /**
-     * Логирует ZMQMessage в bag файл
-     */
+    /** Enqueue a protobuf topic into the bag writer queues. File I/O only — no ZMQ. */
     public void logZMQMessage(Messages.ZMQMessage message) {
-        Log.d(TAG, "Logger.logZMQMessage called, running: " + running.get() + ", bagLogger: " + (bagLogger != null) + ", message: " + (message != null ? message.getTopic() : "null"));
-        if (message == null) {
+        if (message == null || !running.get() || bagLogger == null) {
             return;
         }
-
-        // Forward sensors/commands to native over the single IN endpoint.
-        ZMQBridgeService bridge = ZMQBridgeService.getInstance();
-        if (bridge != null && bridge.isRunning()) {
-            bridge.publishInternalMessage(message.getTopic(), message);
-        }
-
-        if (!running.get() || bagLogger == null) {
-            Log.d(TAG, "Skipping bag write - running: " + running.get() + ", bagLogger: " + (bagLogger != null));
-            return;
-        }
-
         bagLogger.addMessage(message.getTopic(), message);
     }
-
-
-    /**
-     * Принудительно записывает буфер указанного топика
-     */
-    public void flushTopic(String topic) {
-        if (bagLogger != null) {
-            bagLogger.flushTopic(topic);
-        }
-    }
-
-    /**
-     * Получает статистику bag logger'а
-     */
-    public String getBagLoggerStats() {
-        if (bagLogger != null) {
-            return bagLogger.getBufferStats();
-        }
-        return "BagLogger not available";
-    }
-
 }

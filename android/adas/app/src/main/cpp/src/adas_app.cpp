@@ -173,7 +173,8 @@ void AdasApp::setupRealtimeServices()
   }
 
   if (runtime_cfg_.zmq_bridge) {
-    zmq_bridge_service_ = std::make_shared<ZmqBridgeService>();
+    zmq_bridge_service_ =
+        std::make_shared<ZmqBridgeService>(runtime_cfg_.zmq_endpoint_in, runtime_cfg_.zmq_endpoint_out);
     zmq_bridge_service_->setPriority(microros::Service::Priority::High);
     services.push_back(zmq_bridge_service_);
   }
@@ -191,10 +192,16 @@ void AdasApp::setupRealtimeServices()
   }
 
   if (runtime_cfg_.lane_keep) {
-    lane_keep_service_ = std::make_shared<adas::LaneKeepService>(runtime_cfg_.wheelbase_m);
+    lane_keep_service_ = std::make_shared<adas::LaneKeepService>(
+        runtime_cfg_.wheelbase_m, /*desired_speed=*/12.0, runtime_cfg_.max_steer_deg, /*pp_k_dd=*/0.4,
+        /*pp_ld_min=*/3.0, /*pp_ld_max=*/20.0, /*pp_shift=*/1.4, runtime_cfg_.max_torque_cnm, runtime_cfg_.steer_ratio,
+        runtime_cfg_.lat_pid_kp, runtime_cfg_.lat_pid_ki, runtime_cfg_.lat_pid_kf);
     lane_keep_service_->setSteerOutputEnabled(true);
     lane_keep_service_->setPriority(microros::Service::Priority::High);
     services.push_back(lane_keep_service_);
+    LOGI("LaneKeepService LatControlPID max_steer=%.1f° ratio=%.1f max_tq=%.0f kp/ki/kf=%.2f/%.2f/%.5f",
+         runtime_cfg_.max_steer_deg, runtime_cfg_.steer_ratio, runtime_cfg_.max_torque_cnm, runtime_cfg_.lat_pid_kp,
+         runtime_cfg_.lat_pid_ki, runtime_cfg_.lat_pid_kf);
   }
 
   if (runtime_cfg_.localization) {

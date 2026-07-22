@@ -75,6 +75,8 @@ PYBIND11_MODULE(core, m)
       .def_readwrite("timestamp_us", &adas::ChassisSample::timestamp_us)
       .def_readwrite("speed_mps", &adas::ChassisSample::speed_mps)
       .def_readwrite("steer_rad", &adas::ChassisSample::steer_rad)
+      .def_readwrite("steering_angle_deg", &adas::ChassisSample::steering_angle_deg)
+      .def_readwrite("steering_pressed", &adas::ChassisSample::steering_pressed)
       .def_readwrite("yaw_rate", &adas::ChassisSample::yaw_rate);
 
   py::class_<adas::LanePathMsg>(m, "LanePathMsg")
@@ -270,6 +272,9 @@ PYBIND11_MODULE(core, m)
       .def_readonly("timestamp_us", &adas::LaneKeepOutput::timestamp_us)
       .def_readonly("steer_rad", &adas::LaneKeepOutput::steer_rad)
       .def_readonly("steer_norm", &adas::LaneKeepOutput::steer_norm)
+      .def_readonly("desired_swa_deg", &adas::LaneKeepOutput::desired_swa_deg)
+      .def_readonly("actual_swa_deg", &adas::LaneKeepOutput::actual_swa_deg)
+      .def_readonly("angle_error_deg", &adas::LaneKeepOutput::angle_error_deg)
       .def_readonly("throttle", &adas::LaneKeepOutput::throttle)
       .def_readonly("brake", &adas::LaneKeepOutput::brake)
       .def_readonly("lookahead_m", &adas::LaneKeepOutput::lookahead_m)
@@ -280,10 +285,11 @@ PYBIND11_MODULE(core, m)
       .def_readonly("status", &adas::LaneKeepOutput::status);
 
   py::class_<adas::LaneKeepService, std::shared_ptr<adas::LaneKeepService>>(m, "LaneKeepService")
-      .def(py::init<double, double, double, double, double, double, double, double>(), py::arg("wheelbase") = 2.636,
-           py::arg("desired_speed") = 12.0, py::arg("max_steer_deg") = 40.0, py::arg("pp_k_dd") = 0.4,
-           py::arg("pp_ld_min") = 3.0, py::arg("pp_ld_max") = 20.0, py::arg("pp_shift") = 1.4,
-           py::arg("max_torque_cnm") = 300.0)
+      .def(py::init<double, double, double, double, double, double, double, double, double, double, double, double>(),
+           py::arg("wheelbase") = 2.636, py::arg("desired_speed") = 12.0, py::arg("max_steer_deg") = 8.0,
+           py::arg("pp_k_dd") = 0.4, py::arg("pp_ld_min") = 3.0, py::arg("pp_ld_max") = 20.0, py::arg("pp_shift") = 1.4,
+           py::arg("max_torque_cnm") = 300.0, py::arg("steer_ratio") = 15.7, py::arg("pid_kp") = 0.6,
+           py::arg("pid_ki") = 0.2, py::arg("pid_kf") = 0.00006)
       .def(
           "step",
           [](adas::LaneKeepService& self, double speed, const std::vector<std::pair<double, double>>& poly) {

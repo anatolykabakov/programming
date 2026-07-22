@@ -10,8 +10,7 @@ Based on openpilot ~v0.8.x `driving.cc` output layout (same ONNX as
 | `vision/SupercomboOnnxRunner` | Preprocess + ONNX Runtime infer + parse **plan / lanes / edges** |
 | `vision/LaneLines` | 4 lanes + 2 edges + best PLAN path at ego xyz |
 | `vision/LaneOverlayView` | Yellow lanes / red edges / **green PLAN** on camera |
-| `vision/LanePublisher` | ZMQ PUB `tcp://*:5599` topic `lanes` (JSON for C++) |
-| `vision/VisionPipeline` | Background thread wiring |
+| `vision/VisionPipeline` | Background thread → overlay + `Logger` (`vision/lanes` protobuf → ZMQ IN) |
 
 ## Output parse (important)
 

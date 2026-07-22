@@ -1,7 +1,5 @@
 package ai.flow.adas;
 
-import static android.hardware.camera2.CameraMetadata.CONTROL_AF_MODE_AUTO;
-
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -37,9 +35,6 @@ import android.graphics.Bitmap;
 import ai.flow.adas.Messages.ZMQMessage;
 import ai.flow.adas.ProtoUtils;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -516,8 +511,6 @@ public class CameraHandler {
             // Image resolution we're actually capturing
             intrinsicsData.append("Capture resolution: ").append(W).append(" x ").append(H).append(" pixels\n");
             intrinsicsData.append("=== End of camera intrinsics ===");
-
-            // Logger.getInstance().logCameraI ntrinsics(intrinsicsData.toString());
 
             // Always compute bag-scaled K; write to bag when logger is running.
             try {
