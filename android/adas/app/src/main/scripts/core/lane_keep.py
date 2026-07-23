@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Lane keeping for bag/sim visualizers.
+"""Lane keeping for bag/sim visualizers via Simulated ``pyadas.AdasApp``.
 
-``pure_pursuit`` mode uses C++ ``LaneKeepService`` / ``PurePursuit``.
-``lateral_pd`` / ``straight`` remain Python (sim/viz only; not in Android C++).
+``pure_pursuit`` / ``straight`` only — publish chassis/lanes, ``step``, read state.
 """
 
 from __future__ import annotations
@@ -11,25 +10,20 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import numpy as np
+from pyadas import core as pyadas
 
-from .native import NativeLaneKeep
-from .pure_pursuit import PurePursuitResult
+from .pure_pursuit import PurePursuitResult, pp_result_from_output
 
 
 @dataclass(frozen=True)
 class LaneKeepDefaults:
-    """Defaults shared by visualizer and sim."""
-
     speed_mps: float = 12.0
-    max_steer_deg: float = 40.0
+    max_steer_deg: float = 8.0
     wheelbase: float = 2.636
     pp_k_dd: float = 0.4
     pp_ld_min: float = 3.0
     pp_ld_max: float = 20.0
     pp_shift: float = 1.40
-    pd_la: float = 15.0
-    pd_ky: float = 0.1
-    pd_kpsi: float = 0.5
     speed_kp: float = 0.08
 
 
@@ -58,7 +52,6 @@ def build_centerline_polyline(
     x_max: float = 40.0,
     n: int = 48,
 ) -> Optional[np.ndarray]:
-    """Lane center in road frame: X forward, Y left."""
     left = np.asarray(left_road, dtype=np.float64)
     right = np.asarray(right_road, dtype=np.float64)
     if left.ndim != 2 or right.ndim != 2 or left.shape[0] < 2 or right.shape[0] < 2:
@@ -75,30 +68,7 @@ def build_centerline_polyline(
     return np.stack([xs, 0.5 * (y_left + y_right)], axis=1)
 
 
-def lateral_pd_steer_rad(
-    polyline: np.ndarray,
-    speed_mps: float,
-    lookahead_m: float = 15.0,
-    ky: float = 0.1,
-    kpsi: float = 0.5,
-    wheelbase: float = 2.636,
-) -> tuple[float, float, float, float]:
-    """Same law as bag_lane_keep_offline.py → road-wheel steer [rad]."""
-    xs = polyline[:, 0]
-    ys = polyline[:, 1]
-    la = float(lookahead_m)
-    e_y = float(np.interp(la, xs, ys))
-    y_near = float(np.interp(max(5.0, la * 0.5), xs, ys))
-    y_far = float(np.interp(la * 1.5, xs, ys))
-    e_psi = float(np.arctan2(y_far - y_near, la))
-    v = max(float(speed_mps), 1.0)
-    curv = -(ky * e_y + kpsi * e_psi) / (v * v)
-    steer_rad = float(curv * wheelbase)
-    return steer_rad, e_y, e_psi, curv
-
-
 def format_lane_keep_status(lk: LaneKeepResult) -> str:
-    """One-line HUD / UI status for lane keeping."""
     if lk.mode == "pure_pursuit" and lk.pure_pursuit is not None:
         pp = lk.pure_pursuit
         tgt = (
@@ -110,19 +80,13 @@ def format_lane_keep_status(lk: LaneKeepResult) -> str:
             f"Ld={pp.lookahead_m:.1f}m δ={np.rad2deg(lk.steer_rad):.1f}° "
             f"κ={lk.curvature:.4f}/m tgt={tgt}"
         )
-    if lk.mode == "lateral_pd":
-        return (
-            f"PD δ={np.rad2deg(lk.steer_rad):.1f}° "
-            f"e_y={lk.e_y:.2f} e_psi={np.rad2deg(lk.e_psi):+.1f}° "
-            f"κ={lk.curvature:.4f}"
-        )
     return f"{lk.mode} δ={np.rad2deg(lk.steer_rad):+.1f}°  {lk.status}"
 
 
 class LaneKeepController:
-    """Lane keeping from centerline polyline or MetaDrive lane boundaries."""
+    """Sim/viz glue: publish inputs → AdasApp.step → pop_messages(LaneKeepOutput)."""
 
-    MODES = ("straight", "pure_pursuit", "lateral_pd")
+    MODES = ("straight", "pure_pursuit")
 
     def __init__(
         self,
@@ -134,10 +98,8 @@ class LaneKeepController:
         pp_ld_min: float = DEFAULTS.pp_ld_min,
         pp_ld_max: float = DEFAULTS.pp_ld_max,
         pp_shift: float = DEFAULTS.pp_shift,
-        pd_la: float = DEFAULTS.pd_la,
-        pd_ky: float = DEFAULTS.pd_ky,
-        pd_kpsi: float = DEFAULTS.pd_kpsi,
         speed_kp: float = DEFAULTS.speed_kp,
+        app: Any = None,
     ):
         if mode not in self.MODES:
             raise ValueError(f"Unknown mode {mode!r}, expected one of {self.MODES}")
@@ -145,29 +107,43 @@ class LaneKeepController:
         self.desired_speed = float(desired_speed)
         self.max_steer_rad = float(np.deg2rad(max_steer_deg))
         self.wheelbase = float(wheelbase)
-        self._pp_shift = float(pp_shift)
-        self._native: Optional[NativeLaneKeep] = (
-            NativeLaneKeep(
-                wheelbase=wheelbase,
-                desired_speed=desired_speed,
-                max_steer_deg=max_steer_deg,
-                pp_k_dd=pp_k_dd,
-                pp_ld_min=pp_ld_min,
-                pp_ld_max=pp_ld_max,
-                pp_shift=pp_shift,
-            )
-            if mode == "pure_pursuit"
-            else None
-        )
-        self.pd_la = float(pd_la)
-        self.pd_ky = float(pd_ky)
-        self.pd_kpsi = float(pd_kpsi)
+        self.pp_shift = float(pp_shift)
         self.speed_kp = float(speed_kp)
+        self._t_us = 0
+        self._owns_app = app is None
+        self._app = app or pyadas.AdasApp(wheelbase=float(wheelbase))
+        self.apply_pp_params(
+            pp_k_dd=pp_k_dd,
+            pp_ld_min=pp_ld_min,
+            pp_ld_max=pp_ld_max,
+            pp_shift=pp_shift,
+            max_steer_deg=max_steer_deg,
+        )
         self.last_result: Optional[LaneKeepResult] = None
+
+    def apply_pp_params(
+        self,
+        *,
+        pp_k_dd: float,
+        pp_ld_min: float,
+        pp_ld_max: float,
+        pp_shift: float,
+        max_steer_deg: float,
+    ) -> None:
+        self.pp_shift = float(pp_shift)
+        self.max_steer_rad = float(np.deg2rad(max_steer_deg))
+        self._app.set_lane_keep_pp(
+            float(pp_k_dd), float(pp_ld_min), float(pp_ld_max), float(pp_shift)
+        )
+        self._app.set_lane_keep_max_steer_deg(float(max_steer_deg))
 
     @property
     def waypoint_shift(self) -> float:
-        return self._pp_shift
+        return self.pp_shift
+
+    @property
+    def app(self) -> Any:
+        return self._app
 
     def _speed_action(self, speed_mps: float) -> tuple[float, float]:
         err = self.desired_speed - max(0.0, float(speed_mps))
@@ -177,36 +153,11 @@ class LaneKeepController:
             return 0.0, min(0.5, 0.05 * (-err))
         return 0.0, 0.0
 
-    def _normalize_steer(self, steer_rad: float) -> float:
-        if self.max_steer_rad <= 1e-6:
-            return 0.0
-        return float(np.clip(steer_rad / self.max_steer_rad, -1.0, 1.0))
-
-    def _pp_result_from_native(
-        self, out: Any, poly: np.ndarray, speed_mps: float
-    ) -> PurePursuitResult:
-        target_ego = None
-        target_ra = None
-        if getattr(out, "has_target", False):
-            target_ego = np.array([out.target_x, out.target_y], dtype=np.float64)
-            target_ra = np.array([out.target_x + self._pp_shift, out.target_y], dtype=np.float64)
-        return PurePursuitResult(
-            lookahead_m=float(out.lookahead_m),
-            target_ra=target_ra,
-            target_ego=target_ego,
-            alpha_rad=0.0,
-            steer_rad=float(out.steer_rad),
-            speed_mps=float(speed_mps),
-            polyline_ego=poly,
-            wheel_base=self.wheelbase,
-        )
-
     def compute_from_polyline(
         self,
         speed_mps: float,
         polyline: Optional[np.ndarray],
     ) -> LaneKeepResult:
-        """Run controller on an existing ego-frame polyline (visualizer plan / sim centerline)."""
         throttle, brake = self._speed_action(speed_mps)
 
         if self.mode == "straight" or polyline is None:
@@ -236,55 +187,61 @@ class LaneKeepController:
             self.last_result = result
             return result
 
-        if self.mode == "pure_pursuit":
-            assert self._native is not None
-            out = self._native.step(speed_mps, poly)
+        pairs = [(float(x), float(y)) for x, y in poly]
+        self._t_us += 50_000
+        self._app.publish_chassis(self._t_us, float(speed_mps), 0.0)
+        self._app.publish_lanes(self._t_us, pairs)
+        self._app.step(self._t_us)
+        out = None
+        for msg in self._app.pop_messages():
+            if isinstance(msg, pyadas.LaneKeepOutput):
+                out = msg
+        if out is None:
             result = LaneKeepResult(
                 mode=self.mode,
-                steer_rad=float(out.steer_rad),
-                steer_norm=float(out.steer_norm),
-                throttle=float(out.throttle),
-                brake=float(out.brake),
+                steer_rad=0.0,
+                steer_norm=0.0,
+                throttle=throttle,
+                brake=brake,
                 polyline=poly,
-                curvature=float(out.curvature),
-                pure_pursuit=self._pp_result_from_native(out, poly, speed_mps),
-                status=str(out.status),
+                status="no_output",
             )
             self.last_result = result
             return result
-
-        # lateral_pd (Python-only viz/sim mode)
-        steer_rad, e_y, e_psi, curv = lateral_pd_steer_rad(
-            poly,
-            speed_mps,
-            lookahead_m=self.pd_la,
-            ky=self.pd_ky,
-            kpsi=self.pd_kpsi,
-            wheelbase=self.wheelbase,
+        # Use geometric PP steer_rad. out.steer_norm may be LatControlPid torque
+        # command (real-car path) and is wrong for MetaDrive / host actuators.
+        steer_rad = float(out.steer_rad)
+        steer_norm = float(
+            np.clip(steer_rad / self.max_steer_rad, -1.0, 1.0) if self.max_steer_rad > 1e-6 else 0.0
         )
         result = LaneKeepResult(
             mode=self.mode,
             steer_rad=steer_rad,
-            steer_norm=self._normalize_steer(steer_rad),
+            steer_norm=steer_norm,
             throttle=throttle,
             brake=brake,
             polyline=poly,
-            e_y=e_y,
-            e_psi=e_psi,
-            curvature=curv,
-            status="ok",
+            curvature=float(out.curvature),
+            pure_pursuit=pp_result_from_output(
+                out,
+                poly,
+                speed_mps,
+                waypoint_shift=self.pp_shift,
+                wheel_base=self.wheelbase,
+            ),
+            status=str(out.status),
         )
         self.last_result = result
         return result
 
     def compute(self, speed_mps: float, lanes: Optional[Dict[str, Any]]) -> LaneKeepResult:
-        """MetaDrive-style entry: build centerline from lane boundaries, then control."""
+        """``left_road`` / ``right_road`` must already be **device Y-right**."""
         if self.mode == "straight" or lanes is None:
             return self.compute_from_polyline(speed_mps, None)
-
         poly = build_centerline_polyline(lanes.get("left_road"), lanes.get("right_road"))
         return self.compute_from_polyline(speed_mps, poly)
 
     def get_control(self, speed_mps: float, lanes: Optional[Dict[str, Any]] = None) -> list[float]:
+        """Returns [steer_norm, throttle, brake] in **device** frame (right+)."""
         result = self.compute(speed_mps, lanes)
         return [result.steer_norm, result.throttle, result.brake]

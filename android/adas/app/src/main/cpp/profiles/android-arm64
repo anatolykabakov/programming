@@ -11,6 +11,9 @@ build_type=Release
 
 [conf]
 tools.android:ndk_path={{ os.getenv("ANDROID_NDK_ROOT") or os.getenv("ANDROID_NDK_HOME") }}
+# NDK r27 flags.cmake IN_LIST vs old cmake_minimum_required in zeromq/protobuf
+tools.cmake.cmaketoolchain:user_toolchain=["{{ profile_dir }}/../cmake/ndk_cmp0057.cmake"]
+tools.cmake:configure_args=["-DCMAKE_POLICY_DEFAULT_CMP0057=NEW"]
 
 [tool_requires]
 *: cmake/[>=3 <4]

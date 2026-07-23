@@ -6,10 +6,14 @@
 
 namespace adas {
 
-ImuCalibService::ImuCalibService(double speed_threshold_kmh, int min_samples, bool invert_yaw_rate)
-  : calib_(speed_threshold_kmh / 3.6, min_samples, std::max(400, min_samples * 4), invert_yaw_rate)
-  , speed_threshold_kmh_(speed_threshold_kmh)
+ImuCalibService::ImuCalibService(Config config)
+  : config_(config)
+  , calib_(config.speed_threshold_kmh / 3.6, config.min_samples, std::max(400, config.min_samples * 4),
+           config.invert_yaw_rate)
+  , speed_threshold_kmh_(config.speed_threshold_kmh)
 {
+  if (config.has_mount_prior)
+    setMountPrior(config.mount_roll_deg, config.mount_pitch_deg, config.mount_yaw_deg);
 }
 
 void ImuCalibService::configure()
@@ -22,9 +26,13 @@ void ImuCalibService::configure()
 
 void ImuCalibService::reset()
 {
+  const bool had = calib_.hasPrior();
+  const auto R = calib_.rotation();
   calib_.reset();
-  if (have_prior_angles_) {
-    calib_.setMountPrior(prior_roll_, prior_pitch_, prior_yaw_);
+  if (had) {
+    calib_.setMountPrior(0, 0, 0);
+
+    (void)R;
   }
   have_chassis_ = false;
   last_ = ImuSample{};
@@ -33,10 +41,6 @@ void ImuCalibService::reset()
 
 void ImuCalibService::setMountPrior(double roll_deg, double pitch_deg, double yaw_deg)
 {
-  prior_roll_ = roll_deg;
-  prior_pitch_ = pitch_deg;
-  prior_yaw_ = yaw_deg;
-  have_prior_angles_ = true;
   calib_.setMountPrior(roll_deg, pitch_deg, yaw_deg);
   LOGI("ImuCalibService: mount prior roll=%.1f pitch=%.1f yaw=%.1f", roll_deg, pitch_deg, yaw_deg);
 }
@@ -56,7 +60,7 @@ void ImuCalibService::onRawImu(const RawImuSample& msg)
   if (!yr)
     return;
   if (calib_.orientationLocked() && !logged_lock_) {
-    LOGI("ImuCalibService: orientation locked (bias gz=%.5f)", calib_.bias()[2]);
+    LOGI("ImuCalibService: orientation locked (bias gz=%.5f)", calib_.bias().z());
     logged_lock_ = true;
   }
   publishYaw(msg.timestamp_us, *yr);

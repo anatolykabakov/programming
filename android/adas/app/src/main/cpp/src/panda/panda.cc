@@ -18,9 +18,6 @@ Panda::Panda(std::string serial, uint32_t bus_offset) : bus_offset(bus_offset)
 
   hw_type = get_hw_type();
 
-  // assert((hw_type != cereal::PandaState::PandaType::WHITE_PANDA) &&
-  //        (hw_type != cereal::PandaState::PandaType::GREY_PANDA));
-
   has_rtc = (hw_type == cereal::PandaState::PandaType::UNO) || (hw_type == cereal::PandaState::PandaType::DOS) ||
             (hw_type == cereal::PandaState::PandaType::TRES);
 
@@ -34,9 +31,6 @@ Panda::Panda(int fd, uint32_t bus_offset) : bus_offset(bus_offset)
   handle = std::make_unique<PandaUsbHandle>(fd);
 
   hw_type = get_hw_type();
-
-  // assert((hw_type != cereal::PandaState::PandaType::WHITE_PANDA) &&
-  //        (hw_type != cereal::PandaState::PandaType::GREY_PANDA));
 
   has_rtc = (hw_type == cereal::PandaState::PandaType::UNO) || (hw_type == cereal::PandaState::PandaType::DOS) ||
             (hw_type == cereal::PandaState::PandaType::TRES);
@@ -63,8 +57,6 @@ void Panda::set_safety_model(uint16_t safety_model, uint16_t safety_param)
   int rc = handle->control_write(0xdc, safety_model, safety_param);
   if (rc < 0) {
     LOGE("set_safety_model(%u,%u) control_write failed rc=%d", safety_model, safety_param, rc);
-  } else {
-    LOGI("set_safety_model(%u,%u) control_write ok rc=%d", safety_model, safety_param, rc);
   }
 }
 
@@ -83,11 +75,10 @@ cereal::PandaState::PandaType Panda::get_hw_type()
 
 void Panda::set_rtc(struct tm sys_time)
 {
-  // tm struct has year defined as years since 1900
   handle->control_write(0xa1, (uint16_t)(1900 + sys_time.tm_year), 0);
   handle->control_write(0xa2, (uint16_t)(1 + sys_time.tm_mon), 0);
   handle->control_write(0xa3, (uint16_t)sys_time.tm_mday, 0);
-  // handle->control_write(0xa4, (uint16_t)(1 + sys_time.tm_wday), 0);
+
   handle->control_write(0xa5, (uint16_t)sys_time.tm_hour, 0);
   handle->control_write(0xa6, (uint16_t)sys_time.tm_min, 0);
   handle->control_write(0xa7, (uint16_t)sys_time.tm_sec, 0);
@@ -96,7 +87,7 @@ void Panda::set_rtc(struct tm sys_time)
 struct tm Panda::get_rtc()
 {
   struct __attribute__((packed)) timestamp_t {
-    uint16_t year;  // Starts at 0
+    uint16_t year;
     uint8_t month;
     uint8_t day;
     uint8_t weekday;
@@ -108,7 +99,7 @@ struct tm Panda::get_rtc()
   handle->control_read(0xa0, 0, 0, (unsigned char*)&rtc_time, sizeof(rtc_time));
 
   struct tm new_time = {0};
-  new_time.tm_year = rtc_time.year - 1900;  // tm struct has year defined as years since 1900
+  new_time.tm_year = rtc_time.year - 1900;
   new_time.tm_mon = rtc_time.month - 1;
   new_time.tm_mday = rtc_time.day;
   new_time.tm_hour = rtc_time.hour;
@@ -173,7 +164,6 @@ std::optional<std::tuple<uint8_t, uint8_t, uint8_t>> Panda::get_packets_versions
   uint8_t versions[3] = {0};
   int err = handle->control_read(0xdd, 0, 0, versions, 3);
   if (err == 3) {
-    // versions[0] = health_version, versions[1] = can_version, versions[2] = can_health_version
     return std::make_optional(std::make_tuple(versions[0], versions[1], versions[2]));
   }
   return std::nullopt;
@@ -191,7 +181,6 @@ void Panda::enable_deepsleep() { handle->control_write(0xfb, 0, 0); }
 
 void Panda::set_heartbeat_disabled()
 {
-  // dragonpilot connect(): disable FW heartbeat-lost checks outside openpilot uptime
   int rc = handle->control_write(0xf8, 0, 0);
   if (rc < 0) {
     LOGE("set_heartbeat_disabled failed rc=%d", rc);
@@ -235,7 +224,6 @@ void Panda::pack_can_buffer(const std::vector<can_frame>& can_data_list,
   uint8_t send_buf[2 * USB_TX_SOFT_LIMIT];
 
   for (const auto& cmsg : can_data_list) {
-    // check if the message is intended for this panda
     uint8_t bus = cmsg.src;
     if (bus < bus_offset || bus >= (bus_offset + PANDA_BUS_CNT)) {
       continue;
@@ -256,7 +244,6 @@ void Panda::pack_can_buffer(const std::vector<can_frame>& can_data_list,
     memcpy(&send_buf[pos + sizeof(can_header)], (uint8_t*)can_data.data(), can_data.size());
     uint32_t msg_size = sizeof(can_header) + can_data.size();
 
-    // set checksum
     ((can_header*)&send_buf[pos])->checksum = calculate_checksum(&send_buf[pos], msg_size);
 
     pos += msg_size;
@@ -267,7 +254,6 @@ void Panda::pack_can_buffer(const std::vector<can_frame>& can_data_list,
     }
   }
 
-  // send remaining packets
   if (pos > 0)
     write_func(send_buf, pos);
 }
@@ -279,7 +265,6 @@ void Panda::can_send(const std::vector<can_frame>& can_data_list)
 
 bool Panda::can_receive(std::vector<can_frame>& out_vec)
 {
-  // Check if enough space left in buffer to store RECV_SIZE data
   assert(receive_buffer_size + RECV_SIZE <= sizeof(receive_buffer));
 
   int recv = handle->bulk_read(0x81, &receive_buffer[receive_buffer_size], RECV_SIZE);
@@ -307,19 +292,15 @@ bool Panda::unpack_can_buffer(uint8_t* data, uint32_t& size, std::vector<can_fra
 
     const uint8_t data_len = dlc_to_len[header.data_len_code];
     if (pos + sizeof(can_header) + data_len > size) {
-      // we don't have all the data for this message yet
       break;
     }
 
-    // Check checksum BEFORE adding data to output vector (critical for safety!)
     if (calculate_checksum(&data[pos], sizeof(can_header) + data_len) != 0) {
-      // LOGE("Panda CAN checksum failed");
       size = 0;
       can_reset_communications();
       return false;
     }
 
-    // Only add data if checksum is valid
     can_frame& canData = out_vec.emplace_back();
     canData.address = header.addr;
     canData.src = header.bus + bus_offset;
@@ -335,7 +316,6 @@ bool Panda::unpack_can_buffer(uint8_t* data, uint32_t& size, std::vector<can_fra
     pos += sizeof(can_header) + data_len;
   }
 
-  // move the overflowing data to the beginning of the buffer for the next round
   memmove(data, &data[pos], size - pos);
   size -= pos;
 

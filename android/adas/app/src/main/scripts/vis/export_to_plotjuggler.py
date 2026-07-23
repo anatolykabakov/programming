@@ -2,17 +2,16 @@
 """ADAS bag → CSV for PlotJuggler (Android session layout).
 
 Modeled after atom/replay/scripts/analyze_bag.py: one row per message with
-hierarchical columns (vehicle/…, sensors/imu/…, panda/…, gps/…, vision/…).
+hierarchical columns (vehicle/…, sensors/imu/…, panda/…, gps/…, vision/…,
+control/lane_keep/…, controls/steer/…, localization/…, middleware/stats/…).
 
 Usage:
-  python3 export_to_plotjuggler.py /path/to/adas_bags/2026_07_18_09_45_15 -o /tmp/out
+  python3 vis/export_to_plotjuggler.py /path/to/adas_bags/2026_07_18_09_45_15 -o /tmp/out
   # writes /tmp/out/2026_07_18_09_45_15.csv
   plotjuggler /tmp/out/2026_07_18_09_45_15.csv
 """
 
 from __future__ import annotations
-
-import _path  # noqa: F401
 
 import argparse
 import csv
@@ -21,6 +20,13 @@ import statistics
 import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+# scripts/ is parent of vis/; _path lives there.
+_SCRIPTS = Path(__file__).resolve().parent.parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+import _path  # noqa: F401
 
 from vis.android_bag_player import AndroidBagPlayer
 
@@ -32,6 +38,12 @@ SOURCE_ORDER = (
     "vision",
     "camera",
     "can",
+    "control",
+    "controls",
+    "localization",
+    "calibration",
+    "model",
+    "middleware",
 )
 
 
@@ -41,8 +53,6 @@ def vals(prefix: str, **fields: Any) -> dict:
 
 class Collector:
     def __init__(self) -> None:
-        self.wall_t0_ms: Optional[int] = None
-        self.data_t0_ms: Optional[int] = None
         self.rows: list[dict] = []
         self._prev_wall: dict[str, int] = {}
         self._prev_data: dict[str, int] = {}
@@ -60,19 +70,17 @@ class Collector:
         data_ms: int,
         extra: dict,
     ) -> None:
-        if self.wall_t0_ms is None:
-            self.wall_t0_ms = wall_ms
-        if self.data_t0_ms is None:
-            self.data_t0_ms = data_ms
+        # X-axis uses bag/ZMQ wall time (same clock for all topics). Payload
+        # clocks can diverge (e.g. old middleware steady_clock vs BOOTTIME).
         stat_key = f"{source}.{stream}"
         self.counts[stat_key] = self.counts.get(stat_key, 0) + 1
 
         lag_ms = wall_ms - data_ms
         self.lags_ms.setdefault(stat_key, []).append(lag_ms)
 
-        row = {
-            "timestamp": (data_ms - self.data_t0_ms) / 1000.0,
-            f"{prefix}/zmq_timestamp": (wall_ms - self.wall_t0_ms) / 1000.0,
+        row: dict = {
+            "_wall_ms": wall_ms,
+            "_prefix": prefix,
             f"{prefix}/lag_ms": lag_ms,
         }
         prev_w = self._prev_wall.get(prefix)
@@ -149,7 +157,39 @@ class Collector:
             source_idx = len(SOURCE_ORDER)
         return (1, source_idx, col)
 
+    def _align_outlier_clocks(self) -> None:
+        """Shift topics whose timestamps don't overlap the densest stream.
+
+        Old middleware used steady_clock while bags use BOOTTIME (~minutes offset).
+        """
+        from collections import defaultdict
+
+        walls: dict[str, list[int]] = defaultdict(list)
+        for r in self.rows:
+            walls[str(r["_prefix"])].append(int(r["_wall_ms"]))
+        if len(walls) < 2:
+            return
+        primary = max(walls, key=lambda p: len(walls[p]))
+        p_min = min(walls[primary])
+        p_max = max(walls[primary])
+        for prefix, ws in walls.items():
+            t_min, t_max = min(ws), max(ws)
+            if t_max < p_min or t_min > p_max:
+                delta = p_min - t_min
+                print(f"clock-align '{prefix}': +{delta} ms (no overlap with '{primary}')")
+                for r in self.rows:
+                    if r["_prefix"] == prefix:
+                        r["_wall_ms"] = int(r["_wall_ms"]) + delta
+
     def write_csv(self, path: Path) -> None:
+        if not self.rows:
+            return
+        self._align_outlier_clocks()
+        t0 = min(int(r["_wall_ms"]) for r in self.rows)
+        for r in self.rows:
+            wall = int(r.pop("_wall_ms"))
+            r.pop("_prefix", None)
+            r["timestamp"] = (wall - t0) / 1000.0
         self.rows.sort(key=lambda r: r["timestamp"])
         fields = ["timestamp"]
         for row in self.rows:
@@ -157,10 +197,13 @@ class Collector:
         fields[1:] = sorted(fields[1:], key=self._column_rank)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+            w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore", restval="")
             w.writeheader()
             w.writerows(self.rows)
-        print(path)
+        span = self.rows[-1]["timestamp"] - self.rows[0]["timestamp"]
+        print(f"{path}  (t=0..{span:.1f}s, {len(self.rows)} rows, {len(fields)} cols)")
+        print("Note: sparse CSV — each row is one topic; empty cells are normal.")
+        print("In PlotJuggler: DataLoader → CSV, X axis = timestamp, then pick series.")
 
 
 def _data_ms(msg: Any, wall_ms: int) -> int:
@@ -292,7 +335,21 @@ def _lane_y_at(lane: Any, x_pts: list, x_query: float) -> Optional[float]:
 def process_lanes(m: Any, wall_ms: int) -> tuple[int, dict]:
     x_pts = list(m.x)
     names = ("left_far", "left_near", "right_near", "right_far")
+    capture = int(getattr(m, "capture_ts_ms", 0) or 0)
+    infer = int(getattr(m, "infer_ts_ms", 0) or 0)
+    data_ms = _data_ms(m, wall_ms)
+    publish = data_ms
     out: dict = {"vision/lanes/frame_id": m.frame_id, "vision/lanes/n_x": len(x_pts)}
+    if capture > 0:
+        out["vision/lanes/capture_ts_ms"] = capture
+    if infer > 0:
+        out["vision/lanes/infer_ts_ms"] = infer
+        if capture > 0 and infer >= capture:
+            out["vision/lanes/latency_onnx_ms"] = infer - capture
+        if publish >= infer:
+            out["vision/lanes/latency_post_infer_ms"] = publish - infer
+    if capture > 0 and publish >= capture:
+        out["vision/lanes/latency_capture_ms"] = publish - capture
     for i, name in enumerate(names):
         if i >= len(m.lanes):
             break
@@ -308,7 +365,7 @@ def process_lanes(m: Any, wall_ms: int) -> tuple[int, dict]:
         yr = _lane_y_at(m.lanes[2], x_pts, 20.0)
         if yl is not None and yr is not None:
             out["vision/lanes/mid_y20"] = 0.5 * (yl + yr)
-    return _data_ms(m, wall_ms), out
+    return data_ms, out
 
 
 def process_intrinsics(m: Any, wall_ms: int) -> tuple[int, dict]:
@@ -331,6 +388,161 @@ def process_can(m: Any, wall_ms: int) -> tuple[int, dict]:
     return _data_ms(m, wall_ms), vals("can/rx", n_frames=len(m.frames))
 
 
+def process_lane_keep(m: Any, wall_ms: int) -> tuple[int, dict]:
+    data_ms = int(getattr(m, "publish_ts_ms", 0) or 0) or _data_ms(m, wall_ms)
+    capture = int(getattr(m, "capture_ts_ms", 0) or 0)
+    vision = int(getattr(m, "vision_ts_ms", 0) or 0)
+    chassis = int(getattr(m, "chassis_ts_ms", 0) or 0)
+    publish = int(getattr(m, "publish_ts_ms", 0) or 0) or data_ms
+    lat_cap = (publish - capture) if capture > 0 and publish >= capture else None
+    lat_v = (publish - vision) if vision > 0 and publish >= vision else None
+    lat_c = (publish - chassis) if chassis > 0 and publish >= chassis else None
+    return data_ms, vals(
+        "control/lane_keep",
+        steer_rad=m.steer_rad,
+        steer_norm=m.steer_norm,
+        throttle=m.throttle,
+        brake=m.brake,
+        lookahead_m=m.lookahead_m,
+        target_x=m.target_x,
+        target_y=m.target_y,
+        has_target=int(m.has_target),
+        curvature=m.curvature,
+        status_ok=int(m.status == "ok"),
+        capture_ts_ms=capture or None,
+        vision_ts_ms=vision or None,
+        chassis_ts_ms=chassis or None,
+        publish_ts_ms=publish or None,
+        latency_capture_ms=lat_cap,
+        latency_vision_ms=lat_v,
+        latency_chassis_ms=lat_c,
+    )
+
+
+def process_steer(m: Any, wall_ms: int) -> tuple[int, dict]:
+    capture = int(getattr(m, "capture_ts_ms", 0) or 0)
+    vision = int(getattr(m, "vision_ts_ms", 0) or 0)
+    chassis = int(getattr(m, "chassis_ts_ms", 0) or 0)
+    publish = int(getattr(m, "publish_ts_ms", 0) or 0) or wall_ms
+    lat_cap = (publish - capture) if capture > 0 and publish >= capture else None
+    lat_v = (publish - vision) if vision > 0 and publish >= vision else None
+    lat_c = (publish - chassis) if chassis > 0 and publish >= chassis else None
+    # Prefer chassis time for PlotJuggler x-axis — matches torque update rate.
+    data_ms = chassis if chassis > 0 else publish
+    return data_ms, vals(
+        "controls/steer",
+        torque_cnm=m.torque_cnm,
+        enabled=int(m.enabled),
+        capture_ts_ms=capture or None,
+        vision_ts_ms=vision or None,
+        chassis_ts_ms=chassis or None,
+        publish_ts_ms=publish or None,
+        latency_capture_ms=lat_cap,
+        latency_vision_ms=lat_v,
+        latency_chassis_ms=lat_c,
+    )
+
+
+def process_localization(m: Any, wall_ms: int) -> tuple[int, dict]:
+    return _data_ms(m, wall_ms), vals(
+        "localization/pose",
+        x=m.x,
+        y=m.y,
+        yaw=m.yaw,
+        v=m.v,
+        yaw_rate=m.yaw_rate,
+        odom_x=m.odom_x,
+        odom_y=m.odom_y,
+        ekf_x=m.ekf_x,
+        ekf_y=m.ekf_y,
+    )
+
+
+def process_camera_calib(m: Any, wall_ms: int) -> tuple[int, dict]:
+    return _data_ms(m, wall_ms), vals(
+        "calibration/camera",
+        roll_deg=m.roll_deg,
+        pitch_deg=m.pitch_deg,
+        yaw_deg=m.yaw_deg,
+        camera_height_m=m.camera_height_m,
+        fx=m.fx,
+        fy=m.fy,
+        cx=m.cx,
+        cy=m.cy,
+        calibration_success=int(m.calibration_success),
+        n_updates=m.n_updates,
+        vp_u=m.vp_u,
+        vp_v=m.vp_v,
+        has_vp=int(m.has_vp),
+        cal_percent=m.cal_percent,
+        cal_status=m.cal_status,
+    )
+
+
+def process_camera_odometry(m: Any, wall_ms: int) -> tuple[int, dict]:
+    trans = list(m.trans)
+    rot = list(m.rot)
+    out: dict = {"model/camera_odometry/frame_id": m.frame_id}
+    for i, ax in enumerate(("x", "y", "z")):
+        if i < len(trans):
+            out[f"model/camera_odometry/trans_{ax}"] = float(trans[i])
+        if i < len(rot):
+            out[f"model/camera_odometry/rot_{ax}"] = float(rot[i])
+    return _data_ms(m, wall_ms), out
+
+
+def _svc_key(name: str) -> str:
+    return "".join(c if c.isalnum() or c in "_-" else "_" for c in (name or "unknown"))
+
+
+def process_middleware_stats(m: Any, wall_ms: int) -> tuple[int, dict]:
+    out = vals(
+        "middleware/stats",
+        dropped_total=int(m.dropped_total),
+        services=int(m.services),
+        running=int(m.running),
+        any_lagging=int(m.any_lagging),
+    )
+    for svc in m.services_timing:
+        key = _svc_key(svc.name)
+        p = f"middleware/stats/{key}"
+        out.update(
+            vals(
+                p,
+                running=int(svc.running),
+                messages_processed=int(svc.messages_processed),
+                timers_fired=int(svc.timers_fired),
+                exceptions=int(svc.exceptions),
+                dropped=int(svc.dropped),
+                inbox_depth=int(svc.inbox_depth),
+                backlog_depth=int(svc.backlog_depth),
+                last_cb_ms=svc.last_cb_ms,
+                mean_cb_ms=svc.mean_cb_ms,
+                max_cb_ms=svc.max_cb_ms,
+                period_ms=svc.period_ms,
+                last_dt_ms=svc.last_dt_ms,
+                mean_dt_ms=svc.mean_dt_ms,
+                max_dt_ms=svc.max_dt_ms,
+                lagging=int(svc.lagging),
+            )
+        )
+        for tm in getattr(svc, "timers", []) or []:
+            tkey = _svc_key(tm.name) if getattr(tm, "name", "") else f"{int(tm.period_ms)}ms"
+            tp = f"{p}/{tkey}"
+            out.update(
+                vals(
+                    tp,
+                    period_ms=tm.period_ms,
+                    last_dt_ms=tm.last_dt_ms,
+                    mean_dt_ms=tm.mean_dt_ms,
+                    max_dt_ms=tm.max_dt_ms,
+                    lagging=int(tm.lagging),
+                    fired=int(tm.fired),
+                )
+            )
+    return _data_ms(m, wall_ms), out
+
+
 STREAMS: list[tuple[str, str, str, str, Callable]] = [
     # source, stream, topic, prefix, process(msg, wall_ms) -> (data_ms, extra)
     ("vehicle", "state", "vehicle/state", "vehicle", process_vehicle),
@@ -346,6 +558,30 @@ STREAMS: list[tuple[str, str, str, str, Callable]] = [
         process_intrinsics,
     ),
     ("can", "rx", "can/rx", "can/rx", process_can),
+    ("control", "lane_keep", "control/lane_keep", "control/lane_keep", process_lane_keep),
+    ("controls", "steer", "controls/steer", "controls/steer", process_steer),
+    ("localization", "pose", "localization/pose", "localization/pose", process_localization),
+    (
+        "calibration",
+        "camera",
+        "calibration/camera",
+        "calibration/camera",
+        process_camera_calib,
+    ),
+    (
+        "model",
+        "camera_odometry",
+        "model/camera_odometry",
+        "model/camera_odometry",
+        process_camera_odometry,
+    ),
+    (
+        "middleware",
+        "stats",
+        "middleware/stats",
+        "middleware/stats",
+        process_middleware_stats,
+    ),
 ]
 
 

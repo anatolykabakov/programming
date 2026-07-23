@@ -8,7 +8,6 @@
 #include "utils/can_parser.h"
 #include "utils/can_logger.h"
 
-// Функция для вывода информации о CAN фрейме
 void print_frame(int frame_number, const can_frame& frame)
 {
   std::cout << "Frame " << frame_number << ": "
@@ -24,7 +23,6 @@ void print_frame(int frame_number, const can_frame& frame)
   std::cout << std::endl;
 }
 
-// Метод для парсинга сообщений о скорости колес (ESC_51, адрес 0xFC)
 void parseWheelSpeedMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_frame& can_frame)
 {
   auto esc51_msg = dbc_parser.getMessage(can_frame.address);
@@ -45,7 +43,6 @@ void parseWheelSpeedMessage(DBSParser& dbc_parser, uint64_t timestamp, const can
   }
 }
 
-// Метод для парсинга сообщений о повороте руля (LWI_01, адрес 0x86)
 void parseSteeringMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_frame& can_frame)
 {
   auto lwi01_msg = dbc_parser.getMessage(can_frame.address);
@@ -64,7 +61,6 @@ void parseSteeringMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_f
   }
 }
 
-// Метод для парсинга сообщений о скорости автомобиля (ESP_21, адрес 0xFD)
 void parseVehicleSpeedMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_frame& can_frame)
 {
   auto esp21_msg = dbc_parser.getMessage(can_frame.address);
@@ -81,7 +77,6 @@ void parseVehicleSpeedMessage(DBSParser& dbc_parser, uint64_t timestamp, const c
   }
 }
 
-// Метод для парсинга сообщений о передаче (Gateway_73, адрес 0x3DC)
 void parseGearMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_frame& can_frame)
 {
   auto gateway73_msg = dbc_parser.getMessage(can_frame.address);
@@ -89,7 +84,6 @@ void parseGearMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_frame
     auto gear_signal = dbc_parser.extractSignal(can_frame, "GE_Fahrstufe");
 
     if (gear_signal.has_value()) {
-      // Значения передач: 0=Zwischenstellung, 1=Init, 5=P, 6=R, 7=N, 8=D, 9=D, 10=E, 13=T, 14=T, 15=Fehler
       std::string gear_name;
       int gear_value = static_cast<int>(gear_signal.value());
 
@@ -141,12 +135,10 @@ void parseGearMessage(DBSParser& dbc_parser, uint64_t timestamp, const can_frame
   }
 }
 
-// Метод для парсинга QFK_01 (Steering control unit, адрес 0x13D)
 void parseQFK01Message(DBSParser& dbc_parser, uint64_t timestamp, const can_frame& can_frame)
 {
   auto qfk01_msg = dbc_parser.getMessage(can_frame.address);
   if (qfk01_msg.has_value()) {
-    // Извлекаем основные сигналы из QFK_01
     auto curvature = dbc_parser.extractSignal(can_frame, "Curvature");
     auto steering_angle = dbc_parser.extractSignal(can_frame, "Steering_Angle");
     auto latcon_hca_accept = dbc_parser.extractSignal(can_frame, "LatCon_HCA_Accept");
@@ -163,9 +155,9 @@ void parseQFK01Message(DBSParser& dbc_parser, uint64_t timestamp, const can_fram
 
     if (steering_angle.has_value()) {
       std::cout << ", Steering_Angle=" << steering_angle.value() << " (raw)";
-      // Конвертируем в физические единицы
+
       double real_angle = steering_angle.value() * 0.00906;
-      // double degrees = real_angle * 180.0 / 3.14159265359;
+
       std::cout << " (" << std::fixed << std::setprecision(2) << real_angle << "°)";
     }
 
@@ -191,7 +183,6 @@ void parseQFK01Message(DBSParser& dbc_parser, uint64_t timestamp, const can_fram
 
     std::cout << std::endl;
 
-    // Дополнительная информация о состоянии управления
     if (latcon_hca_accept.has_value() && latcon_hca_status.has_value()) {
       int accept = static_cast<int>(latcon_hca_accept.value());
       int status = static_cast<int>(latcon_hca_status.value());
@@ -242,32 +233,25 @@ int main(int argc, char** argv)
 
     const auto& [timestamp, can_frame] = can_frame_with_timestamp_opt.value();
 
-    // print_frame(parsed_frames, can_frame);
-
-    // Парсинг различных типов CAN сообщений
     switch (can_frame.address) {
-      case 0xFC:  // ESC_51 - скорости колес
+      case 0xFC:
         parseWheelSpeedMessage(dbc_parser, timestamp, can_frame);
         break;
 
-      case 0x86:  // LWI_01 - поворот руля
+      case 0x86:
         parseSteeringMessage(dbc_parser, timestamp, can_frame);
         break;
 
-      case 0xFD:  // ESP_21 - скорость автомобиля
+      case 0xFD:
         parseVehicleSpeedMessage(dbc_parser, timestamp, can_frame);
         break;
 
-      case 0x3DC:  // Gateway_73 - передача
+      case 0x3DC:
         parseGearMessage(dbc_parser, timestamp, can_frame);
         break;
 
-        // case 0x13D:  // QFK_01 - Steering control unit
-        //   parseQFK01Message(dbc_parser, timestamp, can_frame);
-        //   break;
-
       default:
-        // Неизвестные сообщения игнорируются
+
         break;
     }
   }

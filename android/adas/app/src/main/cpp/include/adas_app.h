@@ -4,59 +4,69 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
-#include "framework/service_manager.hpp"
-#include "messages.pb.h"
+#include "middleware/middleware.hpp"
 #include "services/camera_calib_service.h"
 #include "services/imu_calib_service.h"
+#include "services/internal_subscriber.h"
 #include "services/lane_keep_service.h"
 #include "services/localization_service.h"
+#include "services/middleware_stats_service.h"
 #include "services/panda_service.h"
 #include "services/topic_convert_service.h"
 #include "services/zmq_bridge_service.h"
-#include "utils/adas_config.h"
-#include "utils/adas_topics.h"
 
-namespace adas {
-
-/** Captures algorithm ZMQ outputs for Python pop_messages(). */
-class InternalSubscriber : public microros::Service {
-public:
-  LaneKeepOutput lane_keep_;
-  bool has_new_lane_keep = false;
-  LocalizationPose pose_;
-  bool has_new_pose = false;
-  CameraCalibrationState camera_calib_;
-  bool has_new_camera_calib = false;
-
-  void configure() override;
-  void reset() override;
-};
-
-}  // namespace adas
-
-/**
- * ADAS application: ServiceManager + panda/ZMQ (Realtime) or algorithm services (Simulated).
- */
 class AdasApp {
 public:
   enum class Mode { RealTime, Simulated };
 
-  AdasApp();
-  explicit AdasApp(int usb_fd, std::string dbc_path = {}, adas::AdasRuntimeConfig cfg = {});
+  struct FeatureFlags {
+    bool enable_panda = true;
+    bool enable_zmq_bridge = true;
+    bool enable_lane_keep = true;
+    bool enable_localization = true;
+    bool enable_camera_calib = true;
+    bool enable_imu_calib = true;
+    bool enable_vision_supercombo = true;
+  };
 
-  AdasApp(Mode mode, double wheelbase = 2.636, double desired_speed = 12.0, double pitch0_deg = -6.0,
-          double yaw0_deg = 0.0, double camera_height = 1.40);
+  struct Config {
+    FeatureFlags feature_flags{};
+    std::string vehicle_name = "vw_golf_7_mqb";
+    PandaService::Config panda{};
+    ZmqBridgeService::Config zmq_bridge{};
+    adas::TopicConvertService::Config topic_convert{};
+    adas::LaneKeepService::Config lane_keep{};
+    adas::LocalizationService::Config localization{};
+    adas::CameraCalibService::Config camera_calib{};
+    adas::ImuCalibService::Config imu_calib{};
+
+    static Config forSimulated(double wheelbase_m = 2.636, double pitch_deg = 0.0, double yaw_deg = 0.0,
+                               double camera_height_m = 1.22);
+
+    static Config loadFromFile(const std::string& path, bool* ok = nullptr);
+  };
+
+  AdasApp();
+  explicit AdasApp(Config cfg);
+  explicit AdasApp(int usb_fd);
+  AdasApp(int usb_fd, std::string dbc_path);
+  AdasApp(int usb_fd, std::string dbc_path, Config cfg);
+
+  AdasApp(Mode mode, double wheelbase = 2.636, double pitch0_deg = 0.0, double yaw0_deg = 0.0,
+          double camera_height = 1.22, int camera_calib_history_len = 50, double gps_noise_pos = 0.5,
+          double gps_update_interval = 0.2);
 
   ~AdasApp();
 
   bool start();
   void stop();
 
-  void setRuntimeConfig(const adas::AdasRuntimeConfig& cfg) { runtime_cfg_ = cfg; }
-  const adas::AdasRuntimeConfig& runtimeConfig() const { return runtime_cfg_; }
+  void setConfig(const Config& cfg) { cfg_ = cfg; }
+  const Config& config() const { return cfg_; }
 
-  std::shared_ptr<microros::ServiceManager> getServiceManager() { return service_manager_; }
+  std::shared_ptr<adas::Middleware> getMiddleware() { return middleware_; }
   Mode mode() const { return mode_; }
 
   void publishChassis(const adas::ChassisSample& chassis);
@@ -65,12 +75,22 @@ public:
   void publishImu(const adas::ImuSample& imu);
   void publishLaneUv(const adas::LaneUvMsg& uv);
 
+  void step(uint64_t timestamp_us);
+
+  /** Drain service outputs published since last pop (typed by message class). */
+  std::vector<adas::HostOutMsg> popMessages();
+
+  void resetCameraCalib();
   void resetLocalization(double x = 0, double y = 0, double yaw = 0, double v = 0, double yaw_rate = 0);
   void setCameraIntrinsics(double fx, double fy, double cx, double cy);
   void setCameraEstimate(double pitch_deg, double yaw_deg);
+  void setCameraHeight(double height_m);
+  void setLaneKeepPp(double k_dd, double ld_min, double ld_max, double shift);
+  void setLaneKeepMaxSteerDeg(double max_steer_deg);
+  void setLaneKeepSteerRatio(double ratio);
+  void setLaneKeepSteerSign(double sign);
 
-  void step(uint64_t timestamp_us);
-
+  // C++ / JNI only — not part of the Python host API.
   adas::LaneKeepService* laneKeep() { return lane_keep_service_.get(); }
   adas::LocalizationService* localization() { return localization_service_.get(); }
   adas::CameraCalibService* cameraCalib() { return camera_calib_service_.get(); }
@@ -79,16 +99,13 @@ public:
 
 private:
   void setupRealtimeServices();
-  void setupSimulatedServices(double wheelbase, double desired_speed, double pitch0_deg, double yaw0_deg,
-                              double camera_height);
+  void setupSimulatedServices();
 
   Mode mode_ = Mode::RealTime;
   std::atomic<bool> running_{false};
-  int usb_fd_ = -1;
-  std::string dbc_path_;
-  adas::AdasRuntimeConfig runtime_cfg_;
+  Config cfg_;
 
-  std::shared_ptr<microros::ServiceManager> service_manager_;
+  std::shared_ptr<adas::Middleware> middleware_;
 
   std::shared_ptr<PandaService> panda_service_;
   std::shared_ptr<ZmqBridgeService> zmq_bridge_service_;

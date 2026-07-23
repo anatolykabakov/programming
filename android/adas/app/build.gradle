@@ -40,28 +40,16 @@ android {
         }
     }
 
-    // Prebuilt .so via jniLibs; NDK path from local.properties / ANDROID_NDK_ROOT
-    // ndkVersion omitted on purpose — avoid AGP downloading a mismatched NDK
-
-//    externalNativeBuild {
-//        cmake {
-//            path "src/main/cpp/CMakeLists.txt"
-//            version "3.22.1"
-//            arguments "-DCMAKE_TOOLCHAIN_FILE=${projectDir}/src/main/cpp/cmake/android-vcpkg.cmake"
-//        }
-//    }
-//
     packagingOptions {
         pickFirst '**/libc++_shared.so'
         pickFirst '**/libprotobuf.so'
         pickFirst '**/libprotobuf-lite.so'
         pickFirst '**/libprotoc.so'
         pickFirst '**/libzmq.so'
-    }
-
-    // Keep ONNX uncompressed so assets copy / ORT can read efficiently
-    androidResources {
-        noCompress 'onnx'
+        pickFirst 'META-INF/LICENSE'
+        pickFirst 'META-INF/LICENSE.txt'
+        pickFirst 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/native-image/**'
     }
 }
 
@@ -70,18 +58,12 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
 
-    // Protocol Buffers
     implementation 'com.google.protobuf:protobuf-java:3.24.4'
     implementation 'com.google.protobuf:protobuf-java-util:3.24.4'
-
-    // ZeroMQ
     implementation 'org.zeromq:jeromq:0.6.0'
-
-    // Logging
     implementation 'org.slf4j:slf4j-api:1.7.30'
     implementation 'org.slf4j:slf4j-simple:1.7.30'
 
-    // Supercombo ONNX (see vision/SupercomboOnnxRunner)
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.3'
 
     testImplementation 'junit:junit:4.13.2'
@@ -89,7 +71,6 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }
 
-// Protocol Buffers configuration
 protobuf {
     protoc {
         artifact = 'com.google.protobuf:protoc:3.24.4'

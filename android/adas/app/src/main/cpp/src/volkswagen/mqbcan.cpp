@@ -74,13 +74,13 @@ can_frame create_steering_control(int bus, int apply_steer, bool lkas_enabled, u
   uint8_t data[8] = {};
   const uint8_t cnt = counter ? (*counter & 0x0F) : 0;
   set_bits(data, cnt, 8, 4);
-  set_bits(data, 0x3, 12, 4);  // SET_ME_0X3
+  set_bits(data, 0x3, 12, 4);
   set_bits(data, std::abs(apply_steer), 16, 14);
   set_bits(data, lkas_enabled ? 1 : 0, 30, 1);
   set_bits(data, apply_steer < 0 ? 1 : 0, 31, 1);
-  set_bits(data, 1, 32, 1);                     // HCA_Available
-  set_bits(data, lkas_enabled ? 0 : 1, 33, 1);  // HCA_Standby
-  set_bits(data, lkas_enabled ? 1 : 0, 34, 1);  // HCA_Active
+  set_bits(data, 1, 32, 1);
+  set_bits(data, lkas_enabled ? 0 : 1, 33, 1);
+  set_bits(data, lkas_enabled ? 1 : 0, 34, 1);
   set_bits(data, 0xFE, 40, 8);
   set_bits(data, 0x07, 48, 8);
   data[0] = volkswagen_mqb_checksum_hca(data, 8);
@@ -93,17 +93,16 @@ can_frame create_steering_control(int bus, int apply_steer, bool lkas_enabled, u
 can_frame create_lka_hud_control(int bus, const LdwStockValues& ldw_stock, bool enabled, bool steering_pressed,
                                  int hud_alert, const HudControl& hud)
 {
-  // LDW_02 has no MQB checksum in vw_mqb_2010.dbc — same as openpilot packer.
   uint8_t data[8] = {};
   if (ldw_stock.valid) {
     std::memcpy(data, ldw_stock.data, 8);
   }
-  set_bits(data, (enabled && steering_pressed) ? 1 : 0, 61, 1);   // LDW_Status_LED_gelb
-  set_bits(data, (enabled && !steering_pressed) ? 1 : 0, 62, 1);  // LDW_Status_LED_gruen
+  set_bits(data, (enabled && steering_pressed) ? 1 : 0, 61, 1);
+  set_bits(data, (enabled && !steering_pressed) ? 1 : 0, 62, 1);
   const int left = hud.leftLaneDepart ? 3 : (1 + (hud.leftLaneVisible ? 1 : 0));
   const int right = hud.rightLaneDepart ? 3 : (1 + (hud.rightLaneVisible ? 1 : 0));
-  set_bits(data, left, 38, 2);   // LDW_Lernmodus_links
-  set_bits(data, right, 36, 2);  // LDW_Lernmodus_rechts
+  set_bits(data, left, 38, 2);
+  set_bits(data, right, 36, 2);
   set_bits(data, hud_alert & 0xF, 16, 4);
   return make_frame(MSG_LDW_02, bus, data, 8);
 }

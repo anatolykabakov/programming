@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Inject SteerCommand over the shared inbound ZMQ socket (controls/steer).
+Inject SteerCommand over controls/steer; PandaService / CarController owns HCA+LDW TX.
 
 Prereqs (on car with app + panda running):
   1. Ignition on → panda safety volkswagen @15
   2. Stock ACC engaged (Set) → controls_allowed=true
   3. Moving (not standstill) and EPS_HCA_Status ready(3)/active(5)
-
-Wire (native binds both):
-  IN  tcp://127.0.0.1:5555  — PUB connect, multipart [topic][ZMQMessage]
-  OUT tcp://127.0.0.1:5556  — SUB connect (vehicle/state, panda/health, …)
+  4. Free port 5564: bind controls/steer PUB here
 
 From host PC:
-  adb reverse tcp:5555 tcp:5555
-  adb forward tcp:5556 tcp:5556
+  adb reverse tcp:5564 tcp:5564
+  adb forward tcp:5565 tcp:5565
+  adb forward tcp:5566 tcp:5566
 
   python3 test_steer_tx.py --left --torque 220 --seconds 4
 
@@ -31,7 +29,7 @@ from pathlib import Path
 import zmq
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR / "vis" / "proto"))
+sys.path.insert(0, str(SCRIPT_DIR / "proto"))
 
 import messages_pb2  # noqa: E402
 
@@ -75,15 +73,12 @@ def safety_name(mode: int) -> str:
 def main() -> int:
     p = argparse.ArgumentParser(description="Verify steering via SteerCommand → CarController HCA")
     g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--left", action="store_true", help="Negative torque (openpilot left)")
-    g.add_argument("--right", action="store_true", help="Positive torque (openpilot right)")
+    g.add_argument("--left", action="store_true", help="Negative torque (left)")
+    g.add_argument("--right", action="store_true", help="Positive torque (right)")
     g.add_argument("--zero", action="store_true", help="Send zero / disabled only")
     p.add_argument("--torque", type=int, default=50, help="Torque cNm, max 300 (default 50)")
     p.add_argument(
-        "--seconds",
-        type=float,
-        default=2.0,
-        help="Hold at target (or max with --delta-deg)",
+        "--seconds", type=float, default=2.0, help="Hold at target (or max with --delta-deg)"
     )
     p.add_argument(
         "--delta-deg",
@@ -91,8 +86,9 @@ def main() -> int:
         default=None,
         help="Stop early when peak |Δ| reaches this many degrees",
     )
-    p.add_argument("--tx", default="tcp://127.0.0.1:5555", help="inbound PUB connect (native SUB)")
-    p.add_argument("--rx", default="tcp://127.0.0.1:5556", help="outbound SUB connect (native PUB)")
+    p.add_argument("--tx", default="tcp://127.0.0.1:5564", help="controls/steer PUB bind")
+    p.add_argument("--vehicle", default="tcp://127.0.0.1:5566", help="vehicle/state SUB")
+    p.add_argument("--health", default="tcp://127.0.0.1:5565", help="panda/health SUB")
     p.add_argument("--dry-run", action="store_true", help="Print ramp only, no ZMQ")
     args = p.parse_args()
 
@@ -113,38 +109,29 @@ def main() -> int:
 
     ctx = zmq.Context()
     pub = ctx.socket(zmq.PUB)
-    pub.connect(args.tx)
-    print(f"PUB connected {args.tx} (native IN / wait for bind…)")
+    pub.bind(args.tx)
+    print(f"PUB controls/steer bound {args.tx} (wait for phone SUB…)")
     time.sleep(0.8)
 
     sub = ctx.socket(zmq.SUB)
-    sub.connect(args.rx)
+    sub.connect(args.vehicle)
+    sub.connect(args.health)
     sub.setsockopt(zmq.SUBSCRIBE, b"")
     sub.setsockopt(zmq.RCVTIMEO, 50)
-    print(f"SUB connected {args.rx} (native OUT)")
 
     angle0 = None
     angle = None
     peak_delta = 0.0  # signed extreme in command direction during pulse
     peak_abs = 0.0
-    health = {
-        "controls_allowed": None,
-        "safety_mode": None,
-        "tx_blocked": None,
-        "ignition": None,
-    }
+    health = {"controls_allowed": None, "safety_mode": None, "tx_blocked": None, "ignition": None}
 
     def poll_telemetry() -> None:
         nonlocal angle0, angle, peak_delta, peak_abs
         try:
             while True:
-                raw = sub.recv_multipart(zmq.NOBLOCK)
-                if len(raw) >= 2:
-                    payload = raw[1]
-                else:
-                    payload = raw[0]
+                raw = sub.recv(zmq.NOBLOCK)
                 msg = messages_pb2.ZMQMessage()
-                msg.ParseFromString(payload)
+                msg.ParseFromString(raw)
                 if msg.HasField("car_state"):
                     angle = msg.car_state.steering_angle_deg
                     if angle0 is None:
@@ -164,8 +151,7 @@ def main() -> int:
             pass
 
     def send_tq(tq: int, enabled: bool) -> None:
-        body = make_steer_cmd(tq, enabled)
-        pub.send_multipart([b"controls/steer", body])
+        pub.send(make_steer_cmd(tq, enabled))
 
     def reached_delta() -> bool:
         if want_delta is None:

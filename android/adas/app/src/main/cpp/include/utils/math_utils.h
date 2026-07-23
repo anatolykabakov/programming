@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include <Eigen/Core>
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -17,9 +19,14 @@ inline double normalizeAngle(double angle)
   return angle;
 }
 
-struct Vec2 {
-  double x = 0.0;
-  double y = 0.0;
-};
+/** GPS bearing (deg, 0=N clockwise) → ENU yaw (rad, 0=+x east, CCW). */
+inline double yawEnuFromBearingDeg(double bearing_deg)
+{
+  return normalizeAngle(M_PI / 2.0 - bearing_deg * (M_PI / 180.0));
+}
+
+using Vec2 = Eigen::Vector2d;
+using Vec3 = Eigen::Vector3d;
+using Mat3 = Eigen::Matrix3d;
 
 }  // namespace adas

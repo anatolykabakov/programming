@@ -5,7 +5,7 @@ package ai.flow.adas;
 option java_outer_classname = "CameraCalibOuter";
 
 // Dynamic camera calibration (pitch/yaw); roll=0, height from prior.
-// Android/sim live path: flowpilot-style pose calib. Host bag can also use VP.
+// Android/sim live path: pose-based calib. Host bag can also use VP.
 message CameraCalibrationState {
   int64 timestamp = 1;
   double roll_deg = 2;
@@ -38,7 +38,7 @@ message LaneUv {
 }
 
 /**
- * Model pose / cameraOdometry (openpilot). Units after parse:
+ * Model pose / cameraOdometry. Units after parse:
  *   trans m/s, rot rad/s, stds already exp()'d (rotStd in rad).
  */
 message CameraOdometry {

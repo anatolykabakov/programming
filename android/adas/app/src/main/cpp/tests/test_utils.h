@@ -9,7 +9,6 @@
 #include <gtest/gtest.h>
 #include "messages.pb.h"
 
-// Test configuration
 struct TestConfig {
   static constexpr int DEFAULT_TIMEOUT_MS = 5000;
   static constexpr int MESSAGE_DELAY_MS = 100;
@@ -17,7 +16,6 @@ struct TestConfig {
   static constexpr int ZMQ_BIND_DELAY_MS = 100;
 };
 
-// Test IMU data structure
 struct TestIMUData {
   float accel_x = 1.0f;
   float accel_y = 2.0f;
@@ -31,10 +29,8 @@ struct TestIMUData {
   long timestamp = 1234567890;
 };
 
-// Test utilities
 class TestUtils {
 public:
-  // Wait for a condition to be true
   template <typename Predicate>
   static bool waitForCondition(Predicate pred, int timeoutMs = TestConfig::DEFAULT_TIMEOUT_MS)
   {
@@ -49,10 +45,8 @@ public:
     return false;
   }
 
-  // Wait for a specific duration
   static void waitFor(int milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
 
-  // Create test IMU data
   static TestIMUData createTestIMUData() { return TestIMUData{}; }
 
   static TestIMUData createTestIMUData(float accel_x, float accel_y, float accel_z, float gyro_x, float gyro_y,
@@ -72,7 +66,6 @@ public:
     return data;
   }
 
-  // Create test IMU message
   static ai::flow::adas::ZMQMessage createTestIMUMessage(const TestIMUData& data)
   {
     ai::flow::adas::ZMQMessage zmq_msg;
@@ -94,7 +87,6 @@ public:
     return zmq_msg;
   }
 
-  // Serialize protobuf message to bytes
   static std::vector<uint8_t> serializeMessage(const ai::flow::adas::ZMQMessage& msg)
   {
     std::string serialized;
@@ -102,7 +94,6 @@ public:
     return std::vector<uint8_t>(serialized.begin(), serialized.end());
   }
 
-  // Verify IMU data in a message
   static bool verifyIMUData(const ai::flow::adas::ZMQMessage& message, const TestIMUData& expectedData)
   {
     if (!message.has_imu_data()) {
@@ -122,7 +113,6 @@ public:
             std::abs(imuData.mag_z() - expectedData.mag_z) < 0.001f && imuData.timestamp() == expectedData.timestamp);
   }
 
-  // Parse protobuf message from bytes
   static bool parseMessage(const std::vector<uint8_t>& data, ai::flow::adas::ZMQMessage& msg)
   {
     std::string serialized(data.begin(), data.end());

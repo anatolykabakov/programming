@@ -1,5 +1,5 @@
 #include "utils/can_parser.h"
-#include "panda/can_frame.h"  // Lightweight can_frame structure
+#include "panda/can_frame.h"
 
 std::optional<double> DBSParser::extractSignal(const can_frame& frame, const std::string& signal_name)
 {
@@ -15,13 +15,11 @@ std::optional<double> DBSParser::extractSignal(const can_frame& frame, const std
 
   const Signal& signal = sig_it->second;
 
-  // Проверяем, что у нас достаточно данных
   int bytes_needed = (signal.start_bit + signal.length + 7) / 8;
   if (frame.dat.length() < bytes_needed) {
     return std::nullopt;
   }
 
-  // Извлекаем биты
   uint64_t raw_value = 0;
   for (int i = 0; i < signal.length; i++) {
     int bit_pos = signal.start_bit + i;
@@ -33,7 +31,6 @@ std::optional<double> DBSParser::extractSignal(const can_frame& frame, const std
     }
   }
 
-  // Применяем фактор и смещение
   double value = raw_value * signal.factor + signal.offset;
   return value;
 }

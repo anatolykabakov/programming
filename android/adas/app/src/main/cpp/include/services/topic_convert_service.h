@@ -1,26 +1,23 @@
 #pragma once
 
-#include "framework/service_manager.hpp"
+#include "middleware/middleware.hpp"
 #include "messages.pb.h"
-#include "utils/adas_config.h"
+#include "utils/gps_local_projector.h"
 
 namespace adas {
 
-/**
- * Android/ZMQ protobuf → typed algorithm inputs:
- *   vision/lanes  → vision/path  (plan + optional near-lane blend)
- *   vehicle/state → vehicle/chassis
- *   sensors/imu   → sensors/imu_raw
- *   sensors/gps/location → sensors/gps/location (GpsSample ENU)
- *   calibration/lane_uv (ZMQ) → calibration/lane_uv (LaneUvMsg)
- *   model/camera_odometry → typed CameraOdometrySample
- */
-class TopicConvertService : public microros::Service {
+class TopicConvertService : public adas::Service {
 public:
-  explicit TopicConvertService(double steer_ratio = 15.7);
+  struct Config {
+    double steer_ratio = 15.7;
+  };
+
+  TopicConvertService() : TopicConvertService(Config{}) {}
+  explicit TopicConvertService(Config config);
 
   void configure() override;
   void reset() override;
+  const Config& config() const { return config_; }
 
 private:
   void onVisionLanes(const ai::flow::adas::ZMQMessage& msg);
@@ -30,6 +27,7 @@ private:
   void onLaneUv(const ai::flow::adas::ZMQMessage& msg);
   void onCameraOdometry(const ai::flow::adas::ZMQMessage& msg);
 
+  Config config_;
   double steer_ratio_ = 15.7;
   GpsLocalProjector gps_proj_;
 };

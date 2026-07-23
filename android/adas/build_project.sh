@@ -29,13 +29,11 @@ read_local_properties() {
     local sdk ndk
     sdk="$(grep -E '^sdk\.dir=' "$props" | head -1 | cut -d= -f2-)"
     ndk="$(grep -E '^ndk\.dir=' "$props" | head -1 | cut -d= -f2-)"
-    # Prefer valid paths from local.properties over stale env (/workspace, etc.)
-    if [ -n "$sdk" ] && [ -d "$sdk" ]; then
+    # Prefer local.properties when env is missing or points to a non-existent path
+    if [ -n "$sdk" ] && { [ -z "${ANDROID_HOME:-}" ] || [ ! -d "${ANDROID_HOME}" ]; }; then
         export ANDROID_HOME="$sdk"
-    elif [ -z "${ANDROID_HOME:-}" ] || [ ! -d "${ANDROID_HOME}" ]; then
-        export ANDROID_HOME="/usr/lib/android-sdk"
     fi
-    if [ -n "$ndk" ] && [ -d "$ndk" ]; then
+    if [ -n "$ndk" ] && { [ -z "${ANDROID_NDK_ROOT:-}" ] || [ ! -d "${ANDROID_NDK_ROOT}" ]; }; then
         export ANDROID_NDK_ROOT="$ndk"
         export ANDROID_NDK_HOME="$ndk"
     fi
@@ -148,41 +146,18 @@ setup_environment() {
     export ANDROID_HOME="${ANDROID_HOME:-/usr/lib/android-sdk}"
     export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
     export PATH="${JAVA_HOME}/bin:${ANDROID_HOME}/platform-tools:${PATH}"
-    mkdir -p "${PROJECT_DIR}/.tools/gradle-home" "${PROJECT_DIR}/.tools/android-home/cache"
+    mkdir -p "${PROJECT_DIR}/.tools/gradle-home"
     export GRADLE_USER_HOME="${PROJECT_DIR}/.tools/gradle-home"
-    # Prefs/cache dir for AGP (NOT the SDK root). Do not set ANDROID_SDK_HOME here —
-    # that var means SDK location and breaks AndroidLocationsBuildService.
-    export ANDROID_USER_HOME="${PROJECT_DIR}/.tools/android-home"
-    unset ANDROID_SDK_HOME
-    if [ -d "${PROJECT_DIR}/.gradle" ] && [ ! -w "${PROJECT_DIR}/.gradle" ]; then
-        print_warning "Обнаружен неперезаписываемый ${PROJECT_DIR}/.gradle (часто после sudo)."
-        print_warning "Сборка пойдёт в .tools/project-cache. Чтобы убрать мусор: sudo rm -rf ${PROJECT_DIR}/.gradle"
-    fi
-    if [ -d "${HOME}/.android" ] && [ ! -w "${HOME}/.android" ]; then
-        print_warning "~/.android не writable — используем ANDROID_USER_HOME=${ANDROID_USER_HOME}"
-        print_warning "Опционально: sudo chown -R \$USER:\$USER ~/.android"
-    fi
-    if [ -d "${PROJECT_DIR}/app/build" ] && [ ! -w "${PROJECT_DIR}/app/build" ]; then
-        print_error "app/build принадлежит root и не удаляется (extractDebugProto fails)."
-        print_error "Выполните один раз:"
-        print_error "  sudo rm -rf ${PROJECT_DIR}/app/build ${PROJECT_DIR}/.gradle"
-        print_error "или:"
-        print_error "  docker run --rm -v ${PROJECT_DIR}:/work alpine rm -rf /work/app/build /work/.gradle"
-        exit 1
-    fi
     print_success "JAVA_HOME=$JAVA_HOME"
     print_success "ANDROID_HOME=$ANDROID_HOME"
     print_success "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
-    print_success "ANDROID_USER_HOME=$ANDROID_USER_HOME"
 }
 
 clean_project() {
     if [ "$CLEAN_BUILD" = true ]; then
         print_status "Очистка проекта..."
         cd "$PROJECT_DIR"
-        local project_cache="${PROJECT_DIR}/.tools/project-cache"
-        mkdir -p "$project_cache"
-        ./gradlew clean --project-cache-dir "$project_cache"
+        ./gradlew clean
         print_success "Проект очищен"
     fi
 }
@@ -197,7 +172,7 @@ build_cpp() {
     if [ "$VERBOSE" = true ]; then
         args+=(-v)
     fi
-    ./scripts/build_cpp.sh "${args[@]}"
+    ./build_cpp.sh "${args[@]}"
     cd "$PROJECT_DIR"
 }
 
@@ -211,14 +186,11 @@ build_android() {
     fi
 
     print_status "Выполнение: ./gradlew $gradle_task"
-    local project_cache="${PROJECT_DIR}/.tools/project-cache"
-    mkdir -p "$project_cache"
-    # Avoid root-owned project .gradle (Permission denied on fileHashes.lock)
-    local gradle_args=("$gradle_task" --project-cache-dir "$project_cache")
     if [ "$VERBOSE" = true ]; then
-        gradle_args+=(--info)
+        ./gradlew "$gradle_task" --info
+    else
+        ./gradlew "$gradle_task"
     fi
-    ./gradlew "${gradle_args[@]}"
 
     local apk_dir="app/build/outputs/apk/$BUILD_TYPE"
     if [ -d "$apk_dir" ] && ls "$apk_dir"/*.apk &>/dev/null; then

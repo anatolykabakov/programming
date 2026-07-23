@@ -12,53 +12,42 @@
 
 #include "test_utils.h"
 
-// Test that starts AdasApp and then connects to its publisher
 TEST(ZMQIMUTest, StartAdasAppAndConnect)
 {
   LOGI("Starting test: StartAdasAppAndConnect");
 
-  // Skip this test on Linux as it requires real USB device
-  // This test is intended for Android platform with connected Panda device
   GTEST_SKIP() << "Test requires USB Panda device, skipping on Linux";
 
-  // Start AdasApp with fake USB FD (this code won't run due to GTEST_SKIP)
   AdasApp app(-1);
-  bool started = app.start();  // Fake FD for testing
+  bool started = app.start();
   EXPECT_TRUE(started) << "AdasApp should start successfully";
   LOGI("AdasApp started successfully");
 
-  // Give AdasApp time to initialize
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   LOGI("AdasApp initialization complete");
 
-  // Create ZMQ context for test
   zmq::context_t context(1);
 
-  // Create IMU publisher → AdasApp inbound (native binds SUB @ 5555)
   zmq::socket_t imu_publisher(context, ZMQ_PUB);
   imu_publisher.connect("tcp://127.0.0.1:5555");
   LOGI("Test IMU publisher connected to tcp://127.0.0.1:5555");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  // Subscriber ← AdasApp outbound (native binds PUB @ 5556)
   zmq::socket_t subscriber(context, ZMQ_SUB);
   subscriber.connect("tcp://127.0.0.1:5556");
   subscriber.set(zmq::sockopt::subscribe, "");
   subscriber.set(zmq::sockopt::rcvtimeo, 1000);
   LOGI("Test subscriber connected to tcp://127.0.0.1:5556");
 
-  // Give time to connect
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   LOGI("Connections established, preparing to send message");
 
-  // Create and send protobuf IMU message to AdasApp
   ai::flow::adas::ZMQMessage zmq_msg;
   zmq_msg.set_topic("imuData");
   zmq_msg.set_timestamp(
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
           .count());
 
-  // Create IMU data
   auto* imu_data = zmq_msg.mutable_imu_data();
   imu_data->set_accel_x(1.1);
   imu_data->set_accel_y(2.2);
@@ -71,11 +60,9 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   imu_data->set_mag_z(0.3);
   imu_data->set_timestamp(zmq_msg.timestamp());
 
-  // Serialize to string
   std::string serialized_data;
   zmq_msg.SerializeToString(&serialized_data);
 
-  // Multipart [topic][payload] on shared IN socket
   const std::string topic = "sensors/imu";
   zmq::message_t topic_frame(topic.data(), topic.size());
   zmq::message_t payload_frame(serialized_data.data(), serialized_data.size());
@@ -84,11 +71,9 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   LOGI("Sent protobuf IMU message to AdasApp: accel(%.1f, %.1f, %.1f), gyro(%.1f, %.1f, %.1f)", imu_data->accel_x(),
        imu_data->accel_y(), imu_data->accel_z(), imu_data->gyro_x(), imu_data->gyro_y(), imu_data->gyro_z());
 
-  // Give AdasApp time to process and forward the message
   LOGI("Waiting for AdasApp to process message...");
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-  // Try to receive a message from AdasApp
   LOGI("Attempting to receive message from AdasApp...");
   zmq::message_t msg;
   LOGI("Calling subscriber.recv()...");
@@ -105,11 +90,9 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
   std::string message_data(static_cast<char*>(msg.data()), msg.size());
   EXPECT_FALSE(message_data.empty()) << "Message should not be empty";
 
-  // Deserialize received protobuf message
   ai::flow::adas::ZMQMessage received_msg;
   EXPECT_TRUE(received_msg.ParseFromString(message_data)) << "Should be able to parse received protobuf message";
 
-  // Verify the message contains IMU data
   EXPECT_TRUE(received_msg.has_imu_data()) << "Received message should contain IMU data";
 
   const auto& received_imu = received_msg.imu_data();
@@ -117,7 +100,6 @@ TEST(ZMQIMUTest, StartAdasAppAndConnect)
        received_imu.accel_x(), received_imu.accel_y(), received_imu.accel_z(), received_imu.gyro_x(),
        received_imu.gyro_y(), received_imu.gyro_z(), received_imu.mag_x(), received_imu.mag_y(), received_imu.mag_z());
 
-  // Verify IMU data matches what we sent
   EXPECT_NEAR(1.1, received_imu.accel_x(), 0.01) << "Accel X should match";
   EXPECT_NEAR(2.2, received_imu.accel_y(), 0.01) << "Accel Y should match";
   EXPECT_NEAR(3.3, received_imu.accel_z(), 0.01) << "Accel Z should match";

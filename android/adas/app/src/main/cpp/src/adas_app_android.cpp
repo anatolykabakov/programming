@@ -2,7 +2,6 @@
 #include <string>
 
 #include "adas_app.h"
-#include "utils/adas_config.h"
 #include "utils/logger.h"
 
 static std::unique_ptr<AdasApp> adas_app;
@@ -20,20 +19,20 @@ static std::string jstringToStd(JNIEnv* env, jstring value)
 
 extern "C" {
 
-JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeStart(JNIEnv* env, jclass /*cls*/, jint fd,
-                                                                    jstring dbcPath, jstring configPath)
+JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeStart(JNIEnv* env, jclass, jint fd, jstring dbcPath,
+                                                                    jstring configPath)
 {
   const std::string dbc_path = jstringToStd(env, dbcPath);
   const std::string config_path = jstringToStd(env, configPath);
 
   bool cfg_ok = false;
-  adas::AdasRuntimeConfig cfg = adas::loadAdasRuntimeConfig(config_path, &cfg_ok);
+  AdasApp::Config cfg = AdasApp::Config::loadFromFile(config_path, &cfg_ok);
   if (!cfg_ok) {
     LOGW("JNI nativeStart: config load failed (%s), continuing with defaults", config_path.c_str());
   }
 
   LOGI("JNI nativeStart fd=%d dbc=%s config=%s lane_keep=%d loc=%d", fd, dbc_path.c_str(), config_path.c_str(),
-       cfg.lane_keep ? 1 : 0, cfg.localization ? 1 : 0);
+       cfg.feature_flags.enable_lane_keep ? 1 : 0, cfg.feature_flags.enable_localization ? 1 : 0);
   try {
     if (!adas_app) {
       adas_app = std::make_unique<AdasApp>(fd, dbc_path, cfg);
@@ -48,12 +47,31 @@ JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeStart(JNIEnv* env,
   }
 }
 
-JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeStop(JNIEnv* /*env*/, jclass /*cls*/)
+JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeStop(JNIEnv*, jclass)
 {
   if (adas_app) {
     adas_app->stop();
     adas_app.reset();
   }
+}
+
+JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeSetLaneKeepPp(JNIEnv*, jclass, jdouble kDd, jdouble ldMin,
+                                                                            jdouble ldMax, jdouble shift)
+{
+  if (adas_app)
+    adas_app->setLaneKeepPp(kDd, ldMin, ldMax, shift);
+}
+
+JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeSetSteerRatio(JNIEnv*, jclass, jdouble ratio)
+{
+  if (adas_app)
+    adas_app->setLaneKeepSteerRatio(ratio);
+}
+
+JNIEXPORT void JNICALL Java_ai_flow_adas_AdasAppHandler_nativeSetMaxSteerDeg(JNIEnv*, jclass, jdouble deg)
+{
+  if (adas_app)
+    adas_app->setLaneKeepMaxSteerDeg(deg);
 }
 
 }  // extern "C"

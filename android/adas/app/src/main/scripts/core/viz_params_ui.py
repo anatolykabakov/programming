@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Optional
-import json
 
 import tkinter as tk
 from tkinter import ttk
@@ -22,11 +22,11 @@ class OverlayUiParams:
     """
 
     roll_deg: float = 0.0
-    pitch_deg: float = 0.76
-    yaw_deg: float = 1.56
-    height_m: float = 0.7
-    cam_x: float = 0.0
-    cam_y_left: float = -0.02
+    pitch_deg: float = 0.0
+    yaw_deg: float = 0.0
+    height_m: float = 1.40
+    cam_x: float = 1.50
+    cam_y_left: float = 0.0
     pp_k_dd: float = DEFAULTS.pp_k_dd
     pp_ld_min: float = DEFAULTS.pp_ld_min
     pp_ld_max: float = DEFAULTS.pp_ld_max
@@ -292,36 +292,27 @@ class RpyPpControlBar:
             cam_y_left=p.cam_y_left,
         )
 
-    def update_rpy_defaults(
-        self,
-        *,
-        roll_deg: Optional[float] = None,
-        pitch_deg: Optional[float] = None,
-        yaw_deg: Optional[float] = None,
-        height_m: Optional[float] = None,
-        cam_x: Optional[float] = None,
-        cam_y_left: Optional[float] = None,
-    ) -> None:
-        """Patch Reset-RPY baseline (e.g. after VP commit). Unspecified fields keep prior defaults."""
-        d = self._rpy_defaults
+    def set_rpy_defaults(self, defaults: OverlayUiParams) -> None:
+        """Replace Reset-RPY baseline (e.g. after loading session calib_rpy.json)."""
         self._rpy_defaults = OverlayUiParams(
-            roll_deg=d.roll_deg if roll_deg is None else float(roll_deg),
-            pitch_deg=d.pitch_deg if pitch_deg is None else float(pitch_deg),
-            yaw_deg=d.yaw_deg if yaw_deg is None else float(yaw_deg),
-            height_m=d.height_m if height_m is None else float(height_m),
-            cam_x=d.cam_x if cam_x is None else float(cam_x),
-            cam_y_left=d.cam_y_left if cam_y_left is None else float(cam_y_left),
+            roll_deg=defaults.roll_deg,
+            pitch_deg=defaults.pitch_deg,
+            yaw_deg=defaults.yaw_deg,
+            height_m=defaults.height_m,
+            cam_x=defaults.cam_x,
+            cam_y_left=defaults.cam_y_left,
         )
 
-    def set_rpy_defaults(self, p: OverlayUiParams) -> None:
-        """Replace Reset-RPY baseline entirely (e.g. assets priors)."""
+    def update_rpy_defaults(self, **kwargs: float) -> None:
+        """Patch Reset-RPY baseline fields (e.g. pitch/yaw after VP commit)."""
+        d = self._rpy_defaults
         self._rpy_defaults = OverlayUiParams(
-            roll_deg=p.roll_deg,
-            pitch_deg=p.pitch_deg,
-            yaw_deg=p.yaw_deg,
-            height_m=p.height_m,
-            cam_x=p.cam_x,
-            cam_y_left=p.cam_y_left,
+            roll_deg=float(kwargs.get("roll_deg", d.roll_deg)),
+            pitch_deg=float(kwargs.get("pitch_deg", d.pitch_deg)),
+            yaw_deg=float(kwargs.get("yaw_deg", d.yaw_deg)),
+            height_m=float(kwargs.get("height_m", d.height_m)),
+            cam_x=float(kwargs.get("cam_x", d.cam_x)),
+            cam_y_left=float(kwargs.get("cam_y_left", d.cam_y_left)),
         )
 
     def _refresh_rpy_labels(self) -> None:

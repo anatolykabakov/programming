@@ -1,9 +1,11 @@
 #pragma once
-// Panda on this device reports health_version=11 (see control 0xdd).
-// Layout matches dragonpilot panda HEALTH_STRUCT v11:
-//   struct.Struct("<IIIIIIIIIBBBBBBHBBBHfBBBB")
 
-#define HEALTH_PACKET_VERSION 11
+#include <cstdint>
+
+// Must match panda firmware (flowpilot/comma HEALTH_PACKET_VERSION 16).
+// v11 had gmlan + gas_interceptor before harness — misaligned reads caused
+// false RELAY_MALFUNCTION, harness=0, safety=0 and a set_safety relay click loop.
+#define HEALTH_PACKET_VERSION 16
 struct __attribute__((packed)) health_t {
   uint32_t uptime_pkt;
   uint32_t voltage_pkt;
@@ -12,15 +14,13 @@ struct __attribute__((packed)) health_t {
   uint32_t safety_rx_invalid_pkt;
   uint32_t tx_buffer_overflow_pkt;
   uint32_t rx_buffer_overflow_pkt;
-  uint32_t gmlan_send_errs_pkt;
   uint32_t faults_pkt;
   uint8_t ignition_line_pkt;
   uint8_t ignition_can_pkt;
   uint8_t controls_allowed_pkt;
-  uint8_t gas_interceptor_detected_pkt;
   uint8_t car_harness_status_pkt;
-  uint8_t safety_mode_pkt;    // uint8 at offset 41
-  uint16_t safety_param_pkt;  // uint16 at offset 42
+  uint8_t safety_mode_pkt;
+  uint16_t safety_param_pkt;
   uint8_t fault_status_pkt;
   uint8_t power_save_enabled_pkt;
   uint8_t heartbeat_lost_pkt;
@@ -28,11 +28,14 @@ struct __attribute__((packed)) health_t {
   float interrupt_load_pkt;
   uint8_t fan_power;
   uint8_t safety_rx_checks_invalid_pkt;
-  uint8_t usb_power_mode_pkt;
-  uint8_t torque_interceptor_detected_pkt;
+  uint16_t spi_checksum_error_count_pkt;
+  uint8_t fan_stall_count;
+  uint16_t sbu1_voltage_mV;
+  uint16_t sbu2_voltage_mV;
+  uint8_t som_reset_triggered;
 };
 
-#define CAN_HEALTH_PACKET_VERSION 4
+#define CAN_HEALTH_PACKET_VERSION 5
 typedef struct __attribute__((packed)) {
   uint8_t bus_off;
   uint32_t bus_off_cnt;
@@ -56,4 +59,8 @@ typedef struct __attribute__((packed)) {
   uint8_t canfd_enabled;
   uint8_t brs_enabled;
   uint8_t canfd_non_iso;
+  uint32_t irq0_call_rate;
+  uint32_t irq1_call_rate;
+  uint32_t irq2_call_rate;
+  uint32_t can_core_reset_cnt;
 } can_health_t;

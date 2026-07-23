@@ -7,13 +7,11 @@
 namespace utils {
 int64_t getCurrentTimestamp()
 {
-  // CLOCK_BOOTTIME ≈ Java SystemClock.elapsedRealtime() (includes deep sleep)
   struct timespec ts {};
   clock_gettime(CLOCK_BOOTTIME, &ts);
   return static_cast<int64_t>(ts.tv_sec) * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
-// Panda-specific message creation functions
 ai::flow::adas::ZMQMessage createCANMessage(const std::vector<can_frame>& frames)
 {
   ai::flow::adas::ZMQMessage zmq_msg;
@@ -49,54 +47,42 @@ ai::flow::adas::ZMQMessage createHealthMessage(const health_t& health)
   auto* health_data = zmq_msg.mutable_panda_health();
   health_data->set_timestamp(current_timestamp);
 
-  // Uptime
   health_data->set_uptime_pkt(health.uptime_pkt);
 
-  // Safety status
   health_data->set_controls_allowed(health.controls_allowed_pkt);
   health_data->set_safety_mode(health.safety_mode_pkt);
   health_data->set_safety_param(health.safety_param_pkt);
   health_data->set_fault_status(health.fault_status_pkt);
 
-  // Power status
   health_data->set_voltage_mv(health.voltage_pkt);
   health_data->set_current_ma(health.current_pkt);
   health_data->set_power_save_enabled(health.power_save_enabled_pkt);
 
-  // TX/RX counters
   health_data->set_tx_blocked(health.safety_tx_blocked_pkt);
   health_data->set_tx_overflow(health.tx_buffer_overflow_pkt);
   health_data->set_rx_invalid(health.safety_rx_invalid_pkt);
   health_data->set_rx_overflow(health.rx_buffer_overflow_pkt);
   health_data->set_rx_checks_invalid(health.safety_rx_checks_invalid_pkt);
 
-  // Faults and errors
   health_data->set_faults_pkt(health.faults_pkt);
-  health_data->set_spi_error_count(0);  // not in health v11
+  health_data->set_spi_error_count(health.spi_checksum_error_count_pkt);
 
-  // Ignition status
   health_data->set_ignition_line(health.ignition_line_pkt);
   health_data->set_ignition_can(health.ignition_can_pkt);
 
-  // Car harness status
   health_data->set_car_harness_status(health.car_harness_status_pkt);
 
-  // Heartbeat status
   health_data->set_heartbeat_lost(health.heartbeat_lost_pkt);
 
-  // Alternative experience
   health_data->set_alternative_experience(health.alternative_experience_pkt);
 
-  // System load
   health_data->set_interrupt_load(health.interrupt_load_pkt);
 
-  // Fan status
   health_data->set_fan_power(health.fan_power);
 
-  // SBU / SOM not present in health v11
-  health_data->set_sbu1_voltage_mv(0);
-  health_data->set_sbu2_voltage_mv(0);
-  health_data->set_som_reset_triggered(false);
+  health_data->set_sbu1_voltage_mv(health.sbu1_voltage_mV);
+  health_data->set_sbu2_voltage_mv(health.sbu2_voltage_mV);
+  health_data->set_som_reset_triggered(health.som_reset_triggered != 0);
 
   return zmq_msg;
 }

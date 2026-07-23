@@ -8,10 +8,6 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * Session file logger via {@link BagLogger} message queues.
- * Does not send on the wire — use {@link ZMQBridgeService#publishToNative} for native.
- */
 public class Logger {
     private static final String TAG = "Logger";
 
@@ -20,7 +16,7 @@ public class Logger {
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private File logDirectory;
-    private BagLogger bagLogger;
+    private volatile BagLogger bagLogger;
 
     private Logger() {
     }
@@ -58,10 +54,10 @@ public class Logger {
         }
 
         logDirectory = dir;
+        BagLogger bl = BagLogger.getInstance();
+        bl.startInDirectory(dir);
+        bagLogger = bl;
         running.set(true);
-
-        bagLogger = BagLogger.getInstance();
-        bagLogger.startInDirectory(dir);
 
         Log.i(TAG, "Logger started successfully");
     }
@@ -73,9 +69,10 @@ public class Logger {
 
         running.set(false);
 
-        if (bagLogger != null) {
-            bagLogger.stop();
-            bagLogger = null;
+        BagLogger bl = bagLogger;
+        bagLogger = null;
+        if (bl != null) {
+            bl.stop();
         }
 
         Log.i(TAG, "Logger stopped. Log directory preserved: "
@@ -86,11 +83,14 @@ public class Logger {
         return running.get();
     }
 
-    /** Enqueue a protobuf topic into the bag writer queues. File I/O only — no ZMQ. */
     public void logZMQMessage(Messages.ZMQMessage message) {
-        if (message == null || !running.get() || bagLogger == null) {
+        if (message == null || !running.get()) {
             return;
         }
-        bagLogger.addMessage(message.getTopic(), message);
+        BagLogger bl = bagLogger;
+        if (bl == null) {
+            return;
+        }
+        bl.addMessage(message.getTopic(), message);
     }
 }

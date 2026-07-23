@@ -3,13 +3,14 @@ find_package(Threads REQUIRED)
 
 add_executable(
   adas_tests
-  main.cpp test_service_manager.cpp test_zmq_imu.cpp test_utils.cpp
+  main.cpp test_middleware.cpp test_zmq_imu.cpp test_utils.cpp
+  test_lat_control.cpp test_panda_mqb.cpp
 )
 
 target_include_directories(
   adas_tests
-  PRIVATE ${PROJECT_SOURCE_DIR}/include
-          ${PROJECT_BINARY_DIR}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..
+          ${CMAKE_CURRENT_BINARY_DIR}/..
 )
 
 target_compile_definitions(

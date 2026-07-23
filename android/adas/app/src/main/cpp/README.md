@@ -1,6 +1,6 @@
 # ADAS C++ Application
 
-Advanced Driver Assistance System (ADAS) application built with ServiceManager framework for Android.
+Advanced Driver Assistance System (ADAS) application built with Middleware framework for Android.
 
 ## Project Structure
 
@@ -8,7 +8,7 @@ Advanced Driver Assistance System (ADAS) application built with ServiceManager f
 cpp/
 ├── include/                        # Public headers
 │   ├── adas_app.h
-│   ├── framework/service_manager.hpp
+│   ├── middleware/middleware.hpp
 │   ├── panda/                      # Panda USB / CAN headers
 │   ├── services/                   # Service headers
 │   ├── utils/
@@ -24,11 +24,9 @@ cpp/
 │   ├── utils/
 │   └── volkswagen/
 │
-├── scripts/
-│   └── build_cpp.sh                # Conan + CMake build
-│
 ├── tests/                          # Unit tests
 ├── profiles/                       # Conan profiles
+├── build_cpp.sh                    # Conan + CMake build
 ├── CMakeLists.txt
 └── conanfile.py
 ```
@@ -37,12 +35,12 @@ cpp/
 
 ### Service-Based Design
 
-The application uses a service-oriented architecture with the ServiceManager framework:
+The application uses a service-oriented architecture with the Middleware framework:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    ServiceManager                           │
-│  (ThreadPool: 3 workers, Priority scheduling, Statistics)  │
+│                    Middleware                           │
+│  (one thread per Service, pub/sub+timers)  │
 └─────────────────────────────────────────────────────────────┘
               │         │         │
     ┌─────────┘         │         └──────────┐
@@ -78,27 +76,27 @@ The application uses a service-oriented architecture with the ServiceManager fra
 
 ### Android (ARM64)
 ```bash
-./scripts/build_cpp.sh -t android
+./build_cpp.sh -t android
 # Output: build/libadas_app.so (64MB)
 # Copies to: ../libs/arm64-v8a/
 ```
 
 ### Linux (x86_64)
 ```bash
-./scripts/build_cpp.sh -t linux
+./build_cpp.sh -t linux
 # Output: build/libadas_app.so
 ```
 
 ### With Tests
 ```bash
-./scripts/build_cpp.sh -t linux --test
-# Runs: 10 ServiceManager tests + 1 ZMQ integration test
+./build_cpp.sh -t linux --test
+# Runs: 10 Middleware tests + 1 ZMQ integration test
 ```
 
 ### Clean Build
 ```bash
-./scripts/build_cpp.sh -c -t android  # Clean + Android
-./scripts/build_cpp.sh -c -t linux    # Clean + Linux
+./build_cpp.sh -c -t android  # Clean + Android
+./build_cpp.sh -c -t linux    # Clean + Linux
 ```
 
 ## Services
@@ -149,10 +147,10 @@ See `include/utils/adas_topics.h` for the canonical list.
 ### Basic Template
 
 ```cpp
-#include "framework/service_manager.hpp"
+#include "middleware/middleware.hpp"
 #include "messages.pb.h"
 
-class MyService : public microros::Service
+class MyService : public adas::Service
 {
 public:
     void configure() override {
@@ -195,27 +193,24 @@ cd build
 
 ### Run Specific Test
 ```bash
-./tests/adas_tests --gtest_filter="ServiceManagerTest.InternalTopicPublishing"
+./tests/adas_tests --gtest_filter="MiddlewareTest.InternalTopicPublishing"
 ```
 
 ### Test Coverage
-- ✅ Service lifecycle (start, stop, reset)
+- ✅ Service lifecycle (start, stop)
 - ✅ Pub/Sub functionality
 - ✅ Timer scheduling
-- ✅ Multi-hop message chains
-- ✅ Service priorities
-- ✅ Statistics collection
-- ✅ Threading modes (OneThreadPerService, ThreadPool, SingleThreaded)
-- ✅ Simulated mode (deterministic testing)
+- ✅ Simulated mode (`setTime` + `step`)
 - ✅ Internal topic publishing
-- ✅ Full ZMQ integration (External → Internal → Consumer)
 
 ## Performance
 
 ### Thread Configuration
-- **Mode**: ThreadPool
-- **Workers**: 3 threads
-- **Scheduling**: Priority-based (Critical > High > Normal > Low)
+- **RealTime**: one worker thread per Service; wake on publish / timer deadline (`condition_variable`)
+- **Simulated**: no threads; host drives `setTime` + `step`
+- **Registration**: `registerService` / `registerService<T>(…)` then `startAll`
+- **Backpressure**: per-subscription slots (default capacity 100); drop-oldest + coalesced drain so inboxes cannot grow unbounded
+- **Stats**: `middleware/stats` @ 1 Hz (callback ms, timer dt, lagging, drops) → ZMQ OUT → bag; analyze with `scripts/bag_middleware_stats.py`
 
 ### Measured Performance
 - **Message processing**: <100μs per message
@@ -249,17 +244,8 @@ Managed via `vcpkg.json`:
 ## Statistics & Monitoring
 
 ```cpp
-// Get statistics for a service
-auto stats = service_manager->getServiceStats(my_service);
-if (stats) {
-    LOGI("Messages: %lu", stats->messages_processed);
-    LOGI("Timers: %lu", stats->timers_fired);
-    LOGI("Exceptions: %lu", stats->exceptions_caught);
-    LOGI("Avg time: %lu μs", stats->avg_processing_time_us);
-}
-
-// Print all statistics
-service_manager->printStats();
+// Print middleware summary (service / running counts)
+middleware->printStats();
 ```
 
 ## Troubleshooting
@@ -272,7 +258,7 @@ service_manager->printStats();
 **Problem**: Cannot link `-ludev`
 - **Solution**: `sudo apt-get install libudev-dev`
 
-**Problem**: Template errors in service_manager.hpp
+**Problem**: Template errors in middleware.hpp
 - **Solution**: Ensure C++17 enabled and all headers included
 
 ### Runtime Issues
@@ -294,7 +280,7 @@ This project is part of the ADAS Android application.
 
 When adding new services:
 1. Create service files in `services/` directory
-2. Inherit from `microros::Service`
+2. Inherit from `adas::Service`
 3. Implement `configure()` and `reset()`
 4. Add to CMakeLists.txt
 5. Register in `adas_app.cpp::setupRealtimeServices()`
@@ -304,4 +290,4 @@ When adding new services:
 
 For questions or issues, refer to:
 - `include/utils/adas_topics.h` - Topic reference
-- `tests/test_service_manager.cpp` - Test examples
+- `tests/test_middleware.cpp` - Test examples

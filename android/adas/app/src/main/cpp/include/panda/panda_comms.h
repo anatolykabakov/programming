@@ -10,7 +10,6 @@
 #define TIMEOUT 0
 #define SPI_BUF_SIZE 1024
 
-// comms base class
 class PandaCommsHandle {
 public:
   PandaCommsHandle(std::string serial){};
@@ -23,7 +22,6 @@ public:
   std::atomic<bool> comms_healthy = true;
   static std::vector<std::string> list();
 
-  // HW communication
   virtual int control_write(uint8_t request, uint16_t param1, uint16_t param2, unsigned int timeout = TIMEOUT) = 0;
   virtual int control_read(uint8_t request, uint16_t param1, uint16_t param2, unsigned char* data, uint16_t length,
                            unsigned int timeout = TIMEOUT) = 0;

@@ -16,10 +16,10 @@ from typing import List, Tuple
 
 import numpy as np
 
+from pyadas import core as pyadas
+
 from core.vehicle_model import VehicleModel, normalize_angle
-from core.ekf import VehicleEKF
 from core.gps_utils import gps_to_local_coords
-from core.online_localizer import OnlineLocalizer
 
 
 def calculate_trajectory_imu(
@@ -686,21 +686,22 @@ def calculate_trajectory_ekf(
     alpha_imu: float = 0.7,
     gps_update_interval: float = 1.0,
     imu_update_interval: float = 0.01,
-) -> Tuple[np.ndarray, np.ndarray, VehicleEKF]:
-    """EKF trajectory via streaming ``OnlineLocalizer.step`` (bag / offline wrapper).
+) -> Tuple[np.ndarray, np.ndarray, object]:
+    """EKF trajectory via Simulated ``AdasApp`` (publish → step → pop_messages).
 
-    Same architecture as live: predict(odom) → update_imu → update_gps on interval.
-    ``alpha_imu`` / ``imu_update_interval`` kept for API compatibility; IMU is
-    applied each wheel tick when a yaw_rate sample is available.
+    ``alpha_imu`` / ``imu_update_interval`` kept for API compatibility.
     """
     _ = alpha_imu, imu_update_interval  # API compat
 
     wheel_array = np.asarray(wheel, dtype=np.float64)
+    app = pyadas.AdasApp(
+        wheelbase=float(wheelbase),
+        gps_noise_pos=5.0,
+        gps_update_interval=float(gps_update_interval),
+    )
     if len(wheel_array) < 2:
-        loc = OnlineLocalizer(wheelbase=wheelbase, gps_update_interval=gps_update_interval)
-        loc.reset(yaw=initial_yaw)
-        assert loc.ekf is not None
-        return np.array([0.0]), np.array([0.0]), loc.ekf
+        app.reset_localization(yaw=float(initial_yaw))
+        return np.array([0.0]), np.array([0.0]), app
 
     x_gps, y_gps = gps_to_local_coords(gps_data, origin_idx=0)
     gps_timestamps = np.asarray(gps_data[:, 0], dtype=np.float64)
@@ -720,18 +721,21 @@ def calculate_trajectory_ekf(
         gear_timestamps = []
         gear_names = []
 
-    loc = OnlineLocalizer(
-        wheelbase=wheelbase,
-        gps_noise_pos=5.0,
-        gps_update_interval=gps_update_interval,
-        imu_every_step=True,
-    )
-    loc.reset(x=0.0, y=0.0, yaw=initial_yaw)
+    seed_yaw = float(initial_yaw)
+    if gps_data.shape[1] >= 6:
+        for row in gps_data:
+            spd, brg = float(row[4]), float(row[5])
+            if spd > 2.0 and np.isfinite(brg):
+                seed_yaw = float(np.pi / 2.0 - np.radians(brg))
+                break
+
+    app.reset_localization(x=0.0, y=0.0, yaw=seed_yaw)
 
     timestamps = wheel_array[:, 0]
     dt_arr = np.diff(timestamps) / 1e3
     valid_indices = np.where(dt_arr >= 0.0001)[0] + 1
     unit_to_deg = 32.72 / 400.0
+    has_bearing = gps_data.shape[1] >= 6
 
     xs: List[float] = []
     ys: List[float] = []
@@ -739,8 +743,8 @@ def calculate_trajectory_ekf(
 
     for i in valid_indices:
         t = int(timestamps[i])
+        t_us = int(t) * 1000  # bag wheel stamps are ms → us
         vr, vl, hr, hl = wheel_array[i, 1:5]
-        dt = float(dt_arr[i - 1])
         v = ((vr + vl + hr + hl) / 4.0) / 3.6
 
         steering_angle_abs = 0.0
@@ -772,7 +776,6 @@ def calculate_trajectory_ekf(
         if gear_name == "REVERSE":
             v = -v
 
-        # IMU yaw_rate at wheel time
         idx = bisect.bisect_left(imu_timestamps, t)
         if idx >= len(imu_yaw_rate):
             idx = len(imu_yaw_rate) - 1
@@ -793,20 +796,51 @@ def calculate_trajectory_ekf(
             gps_timestamps[gps_idx] - t
         ):
             gps_idx -= 1
-        gps_xy = (float(x_gps[gps_idx]), float(y_gps[gps_idx]))
 
-        ex, ey, _ = loc.step(
-            dt=dt,
-            speed_mps=v,
-            steer_rad=steer_rad,
-            yaw_rate=yaw_rate,
-            gps_xy=gps_xy,
-            ref_xy=gps_xy,
+        gx, gy = float(x_gps[gps_idx]), float(y_gps[gps_idx])
+        speed_mps = 0.0
+        bearing_deg = 0.0
+        yaw_enu = 0.0
+        vx = vy = 0.0
+        course_valid = False
+        if has_bearing:
+            speed_mps = float(gps_data[gps_idx, 4])
+            bearing_deg = float(gps_data[gps_idx, 5])
+            if speed_mps > 2.0 and np.isfinite(bearing_deg):
+                course_valid = True
+                yaw_enu = float(np.pi / 2.0 - np.radians(bearing_deg))
+                br = np.radians(bearing_deg)
+                vx = float(speed_mps * np.sin(br))
+                vy = float(speed_mps * np.cos(br))
+
+        app.publish_gps(
+            t_us,
+            gx,
+            gy,
+            speed_mps=speed_mps,
+            bearing_deg=bearing_deg,
+            yaw_enu=yaw_enu,
+            vx=vx,
+            vy=vy,
+            course_valid=course_valid,
         )
-        xs.append(ex)
-        ys.append(ey)
+        app.publish_imu(t_us, yaw_rate)
+        app.publish_chassis(t_us, v, steer_rad, yaw_rate)
+        app.step(t_us)
 
-    assert loc.ekf is not None
-    loc.ekf.print_statistics()
+        pose = None
+        for msg in app.pop_messages():
+            if isinstance(msg, pyadas.LocalizationPose):
+                pose = msg
+        if pose is not None:
+            xs.append(float(pose.x))
+            ys.append(float(pose.y))
+
+    pose = None
+    for msg in app.pop_messages():
+        if isinstance(msg, pyadas.LocalizationPose):
+            pose = msg
+    if pose is not None:
+        print(f"AdasApp localization: pose=({pose.x:.2f},{pose.y:.2f}) yaw={pose.yaw:.3f}")
     print(f"EKF trajectory: {len(xs)} pts")
-    return np.asarray(xs), np.asarray(ys), loc.ekf
+    return np.asarray(xs), np.asarray(ys), app

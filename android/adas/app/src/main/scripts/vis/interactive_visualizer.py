@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Interactive ADAS bag visualizer (Android session layout).
 
-Uses AndroidBagPlayer + extractors from visualizer.py.
+Uses AndroidBagPlayer + extractors from vis.visualizer.
 
 UI:
   - trajectory (odom / GPS / IMU / EKF)
@@ -13,12 +13,16 @@ UI:
 Usage:
   python3 vis/interactive_visualizer.py /path/to/2026_07_18_09_45_15
   python3 vis/interactive_visualizer.py -i /path/to/session.zip
-  # or from scripts/: python3 interactive_visualizer.py … (shim)
 """
 
 from __future__ import annotations
 
 import _path  # noqa: F401
+
+import os
+
+# Must be set before importing generated *_pb2 modules.
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 import argparse
 import json
@@ -37,19 +41,20 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from vis.android_bag_player import AndroidBagPlayer
+from core.frames import DRAW_Y_SIGN, DEFAULT_MAX_STEER_DEG, PP_Y_SIGN
 from core.gps_utils import calculate_initial_heading_from_gps, gps_to_local_coords
 from core.imu_utils import process_imu_for_odometry
 from core.lane_projection import (
     CameraIntrinsics,
     intrinsics_from_messages,
 )
+from core.path_fusion import path_from_bag_lanes, path_from_supercombo
 from core.supercombo_compare import (
     SupercomboBev,
     draw_bag_lanes,
     draw_supercombo_overlay,
     make_overlay_geometry,
 )
-from core.supercombo_parse import explain_output
 from vis.trajectory_calculators import (
     calculate_trajectory,
     calculate_trajectory_ekf,
@@ -61,7 +66,6 @@ from core.lane_keep import (
     format_lane_keep_status,
 )
 from core.lane_keep_viz import draw_lane_keep_overlay
-from core.pure_pursuit import plan_to_polyline_ego
 from core.viz_params_ui import OverlayUiParams, RpyPpControlBar, load_camera_priors
 from core.vanishing_point_calib import (
     K_from_fx_fy_cx_cy,
@@ -129,14 +133,23 @@ class InteractiveVisualizer:
         self.intr_msg = None
         self.supercombo = SupercomboBev()
         self.bag_dir: Optional[Path] = None
-        # Camera priors from assets/config.json (Reset VP baseline)
-        self._asset_priors = load_camera_priors()
-        ap = self._asset_priors
+        # Shared Simulated AdasApp for VP calib + lane-keep (C++ middleware).
+        from pyadas import AdasApp
+
+        ap = self._asset_priors = load_camera_priors()
+        self._adas = AdasApp(
+            wheelbase=DEFAULTS.wheelbase,
+            pitch0_deg=ap.pitch_deg,
+            yaw0_deg=ap.yaw_deg,
+            camera_height=ap.height_m,
+            camera_calib_history_len=50,
+        )
         self.vp_calib = VanishingPointCalibrator(
             history_len=50,
             estimated_pitch_deg=ap.pitch_deg,
             estimated_yaw_deg=ap.yaw_deg,
             camera_height_m=ap.height_m,
+            _app=self._adas,
         )
         self._vp_last_img_index: Optional[int] = None
         self._play_last_wall_ms: Optional[float] = None
@@ -173,7 +186,8 @@ class InteractiveVisualizer:
 
         lane_src = ttk.LabelFrame(control, text="Lanes", padding=(4, 0))
         lane_src.pack(side=tk.LEFT, padx=(4, 8))
-        self.lane_source_var = tk.StringVar(value="runtime")
+        # Prefer bag vision/lanes when present — host may not have supercombo.onnx.
+        self.lane_source_var = tk.StringVar(value="bag")
         ttk.Radiobutton(
             lane_src,
             text="Runtime",
@@ -251,9 +265,9 @@ class InteractiveVisualizer:
             height_m=ap.height_m,
             cam_x=ap.cam_x,
             cam_y_left=ap.cam_y_left,
-            pp_k_dd=0.4,
-            pp_ld_min=3.0,
-            pp_ld_max=20.0,
+            pp_k_dd=DEFAULTS.pp_k_dd,
+            pp_ld_min=DEFAULTS.pp_ld_min,
+            pp_ld_max=DEFAULTS.pp_ld_max,
             wheelbase=DEFAULTS.wheelbase,
             pp_shift=DEFAULTS.pp_shift,
         )
@@ -276,7 +290,7 @@ class InteractiveVisualizer:
         self.pp_wb_var = self.params_bar.pp_wb_var
         self.pp_shift_var = self.params_bar.pp_shift_var
         self.pp_status = self.params_bar.pp_status
-        self._pp_controller = LaneKeepController(mode="pure_pursuit")
+        self._pp_controller = LaneKeepController(mode="pure_pursuit", app=self._adas)
 
         main = ttk.Frame(self.master)
         main.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -391,7 +405,6 @@ class InteractiveVisualizer:
             self.supercombo.reset()
             self._update_lane_source_ui()
             self.reset_vp_calib(load_saved=True)
-            print(explain_output())
 
             self.trajectories = {}
             self.calculate_trajectories()
@@ -424,11 +437,14 @@ class InteractiveVisualizer:
                 foreground="green",
             )
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load bag:\n{e}")
-            self.status_label.config(text=f"Error: {e}", foreground="red")
             import traceback
 
             traceback.print_exc()
+            self.status_label.config(text=f"Error: {e}", foreground="red")
+            try:
+                messagebox.showerror("Error", f"Failed to load bag:\n{e}")
+            except tk.TclError:
+                pass
 
     def _load_camera_frames(self) -> None:
         self.camera_frames = []
@@ -508,7 +524,7 @@ class InteractiveVisualizer:
         gear = self.gear_data
 
         x_odom, y_odom = calculate_trajectory(
-            wheel, steering, gear, wheelbase=2.636, initial_yaw=initial_yaw
+            wheel, steering, gear, wheelbase=DEFAULTS.wheelbase, initial_yaw=initial_yaw
         )
         self.trajectories["Odometry"] = (x_odom, y_odom)
         print(f"Odometry: {len(x_odom)} pts")
@@ -540,7 +556,7 @@ class InteractiveVisualizer:
                         imu_processed["yaw_rate"],
                         imu_processed["imu_calibrated"][:, 0],
                         self.gps_data,
-                        wheelbase=2.636,
+                        wheelbase=DEFAULTS.wheelbase,
                         initial_yaw=initial_yaw,
                     )
                     self.trajectories["EKF"] = (x_ekf, y_ekf)
@@ -607,23 +623,17 @@ class InteractiveVisualizer:
         if not self.playing:
             self.update_camera_view(self.current_index)
 
-    def _on_pp_slider(self) -> None:
-        self._on_pp_params(self.params_bar.params())
-
-    def _reset_pp_sliders(self) -> None:
-        self.params_bar.reset_pp()
-
     def _sync_pp_controller(self) -> None:
-        """Refresh shared LaneKeepController from UI sliders."""
+        """Push UI Pure Pursuit params into shared AdasApp."""
         p = self.params_bar.params()
-        self._pp_controller = LaneKeepController(
-            mode="pure_pursuit",
-            wheelbase=p.wheelbase,
+        self._pp_controller.apply_pp_params(
             pp_k_dd=p.pp_k_dd,
             pp_ld_min=p.pp_ld_min,
             pp_ld_max=p.pp_ld_max,
             pp_shift=p.pp_shift,
+            max_steer_deg=DEFAULTS.max_steer_deg,
         )
+        self._pp_controller.wheelbase = float(p.wheelbase)
 
     def _ego_speed_mps(self, index: int) -> float:
         """Best-effort ego speed (m/s) from wheels or GPS."""
@@ -646,18 +656,11 @@ class InteractiveVisualizer:
         self._overlay_cam_x = p.cam_x
         self._overlay_cam_y = p.cam_y_left
         # Hand-tune seeds VP so the next window averages from this prior.
+        # Do not overwrite Reset-RPY baseline here (session/assets / VP commit).
         self.vp_calib.set_estimate(p.pitch_deg, p.yaw_deg, clear_history=True)
-        if hasattr(self, "params_bar"):
-            self.params_bar.set_rpy_defaults_from_current()
         self._update_vp_status_label()
         if not self.playing:
             self.update_camera_view(self.current_index)
-
-    def _on_rpy_slider(self) -> None:
-        self._on_rpy_params(self.params_bar.params())
-
-    def _reset_rpy_sliders(self) -> None:
-        self.params_bar.reset_rpy()
 
     def _sync_rpy_sliders_from_overlay(self) -> None:
         self.params_bar.set_rpy(
@@ -874,45 +877,57 @@ class InteractiveVisualizer:
                 cam_y_left=cam_y,
             )
             use_bag_lanes = self.lane_source_var.get() == "bag" and len(self.bag_lane_frames) > 0
-            out = self.supercombo.infer(img, cache_key=img_index)
+            out = None
+            if not use_bag_lanes:
+                # Match Android ModelCalibWarp: K + RPY for *this* JPEG size.
+                self.supercombo.set_calib(
+                    roll_deg=roll_deg,
+                    pitch_deg=pitch_deg,
+                    yaw_deg=yaw_deg,
+                    fx=fx,
+                    fy=fy,
+                    cx=cx,
+                    cy=cy,
+                    use_warp=True,
+                )
+                out = self.supercombo.infer(img, cache_key=img_index)
 
-            if out is not None:
-                if use_bag_lanes:
-                    bag_lanes = self._find_bag_lanes_by_time(float(ts_cam))
-                    if bag_lanes is not None:
-                        # Bag lanes/plan are already ISO Y-left (Android negated).
-                        # Do not redraw runtime plan/lanes — they use raw Y-right + y_sign=-1.
-                        draw_bag_lanes(img, bag_lanes, geom, w, h, y_sign=1.0)
-                        cv2.putText(
-                            img,
-                            f"bag vision/lanes  plan#{getattr(bag_lanes, 'plan_hyp', -1)}",
-                            (8, 20),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.4,
-                            (255, 255, 255),
-                            1,
-                            cv2.LINE_AA,
-                        )
-                    else:
-                        draw_supercombo_overlay(
-                            img,
-                            out,
-                            geom,
-                            w,
-                            h,
-                            y_sign=-1.0,
-                            lane_tag="runtime (no bag sync)",
-                        )
-                else:
-                    draw_supercombo_overlay(
+            if use_bag_lanes:
+                bag_lanes = self._find_bag_lanes_by_time(float(ts_cam))
+                if bag_lanes is not None:
+                    # Bag lanes/plan are device Y-right (same as flowpilot / ONNX).
+                    draw_bag_lanes(img, bag_lanes, geom, w, h, y_sign=DRAW_Y_SIGN)
+                    cv2.putText(
                         img,
-                        out,
-                        geom,
-                        w,
-                        h,
-                        y_sign=-1.0,
-                        lane_tag="runtime supercombo",
+                        f"bag vision/lanes  plan#{getattr(bag_lanes, 'plan_hyp', -1)}",
+                        (8, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        (255, 255, 255),
+                        1,
+                        cv2.LINE_AA,
                     )
+                else:
+                    cv2.putText(
+                        img,
+                        "bag vision/lanes: no sync for this frame",
+                        (8, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        (0, 200, 255),
+                        1,
+                        cv2.LINE_AA,
+                    )
+            elif out is not None:
+                draw_supercombo_overlay(
+                    img,
+                    out,
+                    geom,
+                    w,
+                    h,
+                    y_sign=DRAW_Y_SIGN,
+                    lane_tag="runtime supercombo",
+                )
             else:
                 cv2.putText(
                     img,
@@ -925,34 +940,45 @@ class InteractiveVisualizer:
                     cv2.LINE_AA,
                 )
 
-            if self.pp_var.get() and out is not None:
-                poly = plan_to_polyline_ego(out.plan.x, out.plan.y, y_sign=-1.0)
-                speed = self._ego_speed_mps(index)
-                self._sync_pp_controller()
-                lk = self._pp_controller.compute_from_polyline(speed, poly)
-                img = draw_lane_keep_overlay(
-                    img,
-                    lk,
-                    fx=fx,
-                    fy=fy,
-                    cx=cx,
-                    cy=cy,
-                    w=w,
-                    h=h,
-                    geom=geom,
-                    pitch_deg=pitch_deg,
-                    yaw_deg=yaw_deg,
-                    roll_deg=roll_deg,
-                    camera_height=height_m,
-                    waypoint_shift=float(self.pp_shift_var.get()),
-                    y_sign=1.0,
-                    draw_bev=False,
-                    draw_footer=False,
-                )
-                self.pp_status.config(text=format_lane_keep_status(lk))
+            if self.pp_var.get():
+                poly = None
+                if use_bag_lanes:
+                    bag_lanes = self._find_bag_lanes_by_time(float(ts_cam))
+                    if bag_lanes is not None:
+                        # Same fusion as Android TopicConvert.laneLinesToPath
+                        poly = path_from_bag_lanes(bag_lanes)
+                elif out is not None:
+                    poly = path_from_supercombo(out)
+
+                if poly is not None and poly.shape[0] >= 2:
+                    speed = self._ego_speed_mps(index)
+                    self._sync_pp_controller()
+                    lk = self._pp_controller.compute_from_polyline(speed, poly)
+                    img = draw_lane_keep_overlay(
+                        img,
+                        lk,
+                        fx=fx,
+                        fy=fy,
+                        cx=cx,
+                        cy=cy,
+                        w=w,
+                        h=h,
+                        geom=geom,
+                        pitch_deg=pitch_deg,
+                        yaw_deg=yaw_deg,
+                        roll_deg=roll_deg,
+                        camera_height=height_m,
+                        waypoint_shift=float(self.pp_shift_var.get()),
+                        y_sign=DRAW_Y_SIGN,
+                        draw_bev=False,
+                        draw_footer=False,
+                    )
+                    self.params_bar.set_pp_status(format_lane_keep_status(lk))
+                else:
+                    self.params_bar.set_pp_status("PP: no plan polyline")
         elif self.pp_var.get():
             # PP needs plan from supercombo
-            self.pp_status.config(text="PP needs Supercombo overlay")
+            self.params_bar.set_pp_status("PP needs Supercombo overlay")
 
         # Sync dt readout for debugging lag
         if len(self.timestamps) > 0 and index < len(self.timestamps):

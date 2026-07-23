@@ -8,55 +8,57 @@
 
 namespace adas {
 
-/** Topic names shared by Android bag / sim pipeline / visualizer. */
 namespace topics {
 inline constexpr const char* kVehicleChassis = "vehicle/chassis";
-/** Android / bag ZMQ protobuf topic. */
 inline constexpr const char* kVisionLanes = "vision/lanes";
-/** Typed ego polyline for LaneKeep (converted from vision/lanes). */
 inline constexpr const char* kVisionPath = "vision/path";
 inline constexpr const char* kGpsLocation = "sensors/gps/location";
-/** Android ZMQ IMU topic. */
 inline constexpr const char* kImu = "sensors/imu";
-/** Typed raw phone-frame IMU (from TopicConvert). */
 inline constexpr const char* kImuRaw = "sensors/imu_raw";
-/** Calibrated vehicle yaw-rate for Localization (from ImuCalibService). */
 inline constexpr const char* kImuYaw = "sensors/imu_yaw";
 inline constexpr const char* kLaneKeep = "control/lane_keep";
 inline constexpr const char* kLocalizationPose = "localization/pose";
 inline constexpr const char* kSteerCommand = "controls/steer";
 inline constexpr const char* kCameraCalib = "calibration/camera";
 inline constexpr const char* kCalibLaneUv = "calibration/lane_uv";
-/** Model pose / cameraOdometry from Android or bag. */
 inline constexpr const char* kCameraOdometry = "model/camera_odometry";
 inline constexpr const char* kVehicleState = "vehicle/state";
+inline constexpr const char* kCanRx = "can/rx";
+inline constexpr const char* kPandaHealth = "panda/health";
+inline constexpr const char* kMiddlewareStats = "middleware/stats";
 }  // namespace topics
 
-/** Lightweight chassis sample for algorithm services (sim + topic bus). */
 struct ChassisSample {
   int64_t timestamp_us = 0;
   double speed_mps = 0.0;
-  double steer_rad = 0.0;           // road-wheel angle [rad]
-  double steering_angle_deg = 0.0;  // steering-wheel angle [deg] (LWI)
-  bool steering_pressed = false;    // driver torque above allowance
-  double yaw_rate = 0.0;            // rad/s
+  double steer_rad = 0.0;
+  double steering_angle_deg = 0.0;
+  bool steering_pressed = false;
+  double yaw_rate = 0.0;
 };
 
-/** Ego-frame path for lane keep (X forward, Y left). */
 struct LanePathMsg {
-  int64_t timestamp_us = 0;
+  int64_t timestamp_us = 0;   // capture (primary)
+  int64_t capture_ts_us = 0;  // camera frame arrival
+  int64_t infer_ts_us = 0;    // after ONNX
   int frame_id = 0;
-  std::vector<Vec2> polyline;  // (x, y)
+  std::vector<Vec2> polyline;
 };
 
 struct GpsSample {
   int64_t timestamp_us = 0;
-  double x = 0.0;  // local ENU / bag frame
+  double x = 0.0;
   double y = 0.0;
+  double speed_mps = 0.0;
+  double bearing_deg = 0.0;
+  /** ENU yaw from bearing; meaningful when course_valid. */
+  double yaw_enu = 0.0;
+  double vx = 0.0;  // east m/s
+  double vy = 0.0;  // north m/s
+  bool course_valid = false;
   bool valid = false;
 };
 
-/** Phone-frame IMU (accel m/s², gyro rad/s). TopicConvert → ImuCalibService. */
 struct RawImuSample {
   int64_t timestamp_us = 0;
   double ax = 0, ay = 0, az = 0;
@@ -66,7 +68,7 @@ struct RawImuSample {
 
 struct ImuSample {
   int64_t timestamp_us = 0;
-  double yaw_rate = 0.0;  // rad/s (vehicle frame, after ImuCalibService)
+  double yaw_rate = 0.0;
   bool valid = false;
 };
 
@@ -83,29 +85,27 @@ struct LocalizationPose {
   double ekf_y = 0.0;
 };
 
-/** Image-space left/right lane samples for VP calib (u,v). */
 struct LaneUvMsg {
   int64_t timestamp_us = 0;
   std::vector<Vec2> left_uv;
   std::vector<Vec2> right_uv;
 };
 
-/** Model pose / cameraOdometry (openpilot units after parse). */
 struct CameraOdometrySample {
   int64_t timestamp_us = 0;
-  double trans[3] = {0, 0, 0};
-  double rot[3] = {0, 0, 0};
-  double trans_std[3] = {1, 1, 1};
-  double rot_std[3] = {1, 1, 1};
+  Vec3 trans = Vec3::Zero();
+  Vec3 rot = Vec3::Zero();
+  Vec3 trans_std = Vec3::Ones();
+  Vec3 rot_std = Vec3::Ones();
   bool valid = false;
 };
 
 struct CameraCalibrationState {
   int64_t timestamp_us = 0;
   double roll_deg = 0.0;
-  double pitch_deg = -6.0;
+  double pitch_deg = 0.0;
   double yaw_deg = 0.0;
-  double camera_height_m = 1.40;
+  double camera_height_m = 1.22;
   double fx = 930.0;
   double fy = 930.0;
   double cx = 640.0;
@@ -116,7 +116,7 @@ struct CameraCalibrationState {
   double vp_v = 0.0;
   bool has_vp = false;
   int cal_percent = 0;
-  int cal_status = 0;  // PoseCalibrator::Status
+  int cal_status = 0;
 };
 
 }  // namespace adas

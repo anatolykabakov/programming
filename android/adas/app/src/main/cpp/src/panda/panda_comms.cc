@@ -6,7 +6,7 @@
 #include "utils/logger.h"
 
 #define USB_CTRL_TIMEOUT_MS 100
-// Hard cap so LIBUSB_ERROR_IO / TIMEOUT cannot busy-loop forever (hangs splash on Android).
+
 #define USB_MAX_RETRIES 5
 
 static bool is_fatal_usb_error(int err)
@@ -28,7 +28,7 @@ static int init_usb_ctx(libusb_context** context)
 {
   assert(context != nullptr);
 
-#ifdef LIBUSB_OPTION_WEAK_AUTHORITY  // present in special proot android build.
+#ifdef LIBUSB_OPTION_WEAK_AUTHORITY
   libusb_set_option(NULL, LIBUSB_OPTION_WEAK_AUTHORITY);
 #endif
   int err = libusb_init(context);
@@ -48,7 +48,6 @@ static int init_usb_ctx(libusb_context** context)
 
 PandaUsbHandle::PandaUsbHandle(std::string serial) : PandaCommsHandle(serial)
 {
-  // init libusb
   ssize_t num_devices;
   libusb_device** dev_list = NULL;
   int err = init_usb_ctx(&ctx);
@@ -56,7 +55,6 @@ PandaUsbHandle::PandaUsbHandle(std::string serial) : PandaCommsHandle(serial)
     goto fail;
   }
 
-  // connect by serial
   num_devices = libusb_get_device_list(ctx, &dev_list);
   if (num_devices < 0) {
     goto fail;
@@ -115,7 +113,6 @@ fail:
 
 PandaUsbHandle::PandaUsbHandle(int fd) : PandaCommsHandle(fd)
 {
-  // init libusb — NO_DEVICE_DISCOVERY must be set on NULL *before* libusb_init
   libusb_device* device = NULL;
   int ret;
   int err = 0;
@@ -128,7 +125,6 @@ PandaUsbHandle::PandaUsbHandle(int fd) : PandaCommsHandle(fd)
     goto fail;
   }
 
-  // connect by file descriptor (Android UsbDeviceConnection FD)
   ret = libusb_wrap_sys_device(ctx, (intptr_t)fd, &dev_handle);
   if (ret != 0 || dev_handle == NULL) {
     LOGE("libusb_wrap_sys_device(fd=%d) failed: %d %s", fd, ret, libusb_strerror((enum libusb_error)ret));
@@ -156,8 +152,6 @@ PandaUsbHandle::PandaUsbHandle(int fd) : PandaCommsHandle(fd)
     libusb_detach_kernel_driver(dev_handle, 0);
   }
 
-  // After wrap_sys_device on Android, set_configuration often fails/BUSY and can break
-  // control OUT. Skip it — device is already configured by UsbManager.openDevice.
 #if defined(BUILD_FOR_ANDROID) || defined(__ANDROID__)
   LOGI("Android FD path: skip set_configuration, claim interface 0");
 #else
@@ -203,7 +197,6 @@ void PandaUsbHandle::cleanup()
 
 std::vector<std::string> PandaUsbHandle::list()
 {
-  // init libusb
   ssize_t num_devices;
   libusb_context* context = NULL;
   libusb_device** dev_list = NULL;
@@ -216,7 +209,6 @@ std::vector<std::string> PandaUsbHandle::list()
 
   num_devices = libusb_get_device_list(context, &dev_list);
   if (num_devices < 0) {
-    // LOGE("libusb can't get device list");
     goto finish;
   }
   printf("=== DEBUG: Found %zd USB devices ===\n", num_devices);
@@ -225,7 +217,6 @@ std::vector<std::string> PandaUsbHandle::list()
     libusb_device_descriptor desc;
     libusb_get_device_descriptor(device, &desc);
 
-    // Print all devices for debugging
     printf("Device %zu: VID=0x%04x, PID=0x%04x, Class=%d, SubClass=%d, Protocol=%d\n", i, desc.idVendor, desc.idProduct,
            desc.bDeviceClass, desc.bDeviceSubClass, desc.bDeviceProtocol);
 
@@ -345,12 +336,9 @@ int PandaUsbHandle::bulk_write(unsigned char endpoint, unsigned char* data, int 
 
   std::lock_guard lk(hw_lock);
   do {
-    // Try sending can messages. If the receive buffer on the panda is full it will NAK
-    // and libusb will try again. After 5ms, it will time out. We will drop the messages.
     err = libusb_bulk_transfer(dev_handle, endpoint, data, length, &transferred, timeout);
 
     if (err == LIBUSB_ERROR_TIMEOUT) {
-      // LOGW("Transmit buffer full");
       break;
     } else if (err != 0 || length != transferred) {
       handle_usb_issue(err, __func__);
@@ -383,10 +371,10 @@ int PandaUsbHandle::bulk_read(unsigned char endpoint, unsigned char* data, int l
     err = libusb_bulk_transfer(dev_handle, endpoint, data, length, &transferred, timeout);
 
     if (err == LIBUSB_ERROR_TIMEOUT) {
-      break;  // timeout is okay to exit, recv still happened
+      break;
     } else if (err == LIBUSB_ERROR_OVERFLOW) {
       comms_healthy = false;
-      // LOGE_100("overflow got 0x%x", transferred);
+
       break;
     } else if (err != 0) {
       handle_usb_issue(err, __func__);

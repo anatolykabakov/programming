@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""VP camera calib — C++ ``CameraCalibService`` + Python Hough/image helpers.
+"""VP camera calib — Hough/image helpers + ``pyadas.AdasApp`` (Simulated).
 
-Host (sim / bag) only: extract image-space lane lines (Hough or projected GT),
-sample to UV, feed C++ ``CameraCalibService`` / ``VanishingPointCalibrator``.
-
-Math (pitch/yaw from vanishing point) lives in C++.
+Host (sim / bag): extract image-space lane lines → UV → publish_lane_uv + step.
 """
 
 from __future__ import annotations
@@ -181,98 +178,107 @@ def _sample_line_uv(line: Line2, w: int, h: int, n: int = 24) -> List[Tuple[floa
 
 @dataclass
 class VanishingPointCalibrator:
-    """Online AAD calibrator — C++ ``CameraCalibService`` (host sim/bag)."""
+    """Online AAD calibrator via Simulated ``pyadas.AdasApp``."""
 
     history_len: int = 50
     mean_residuals_thresh: float = 25.0
-    estimated_pitch_deg: float = -5.0
+    estimated_pitch_deg: float = 0.0
     estimated_yaw_deg: float = 0.0
     camera_height_m: float = 1.40
     calibration_success: bool = False
     pitch_yaw_history: List[List[float]] = field(default_factory=list)
     last_vp: Optional[Tuple[float, float]] = None
     n_updates: int = 0
-    _svc: Any = field(default=None, repr=False, compare=False)
+    _app: Any = field(default=None, repr=False, compare=False)
+    _owns_app: bool = field(default=True, repr=False, compare=False)
+    _t_us: int = field(default=0, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        from .native import require_cpp
+        from pyadas import core as pyadas
 
-        cpp = require_cpp()
-        object.__setattr__(
-            self,
-            "_svc",
-            cpp.CameraCalibService(
-                float(self.estimated_pitch_deg),
-                float(self.estimated_yaw_deg),
-                float(self.camera_height_m),
-                930.0,
-                930.0,
-                640.0,
-                360.0,
-                int(self.history_len),
-            ),
-        )
-
-    @property
-    def history_pending(self) -> int:
-        """Samples buffered toward next C++ commit."""
-        if self._svc is None:
-            return 0
-        try:
-            return int(self._svc.history_pending)
-        except Exception:
-            return len(self.pitch_yaw_history)
-
-    def reset(self) -> None:
-        self.pitch_yaw_history.clear()
-        self.calibration_success = False
-        self.last_vp = None
-        self.n_updates = 0
-        if self._svc is not None:
-            self._svc.reset()
-            self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
+        if self._app is None:
+            app = pyadas.AdasApp(
+                wheelbase=2.636,
+                pitch0_deg=float(self.estimated_pitch_deg),
+                yaw0_deg=float(self.estimated_yaw_deg),
+                camera_height=float(self.camera_height_m),
+                camera_calib_history_len=int(self.history_len),
+            )
+            object.__setattr__(self, "_app", app)
+            object.__setattr__(self, "_owns_app", True)
+        else:
+            object.__setattr__(self, "_owns_app", False)
+            self._app.set_camera_estimate(
+                float(self.estimated_pitch_deg), float(self.estimated_yaw_deg)
+            )
+            self._app.set_camera_height(float(self.camera_height_m))
 
     def set_estimate(
         self,
         pitch_deg: float,
         yaw_deg: float,
         *,
-        clear_history: bool = True,
+        clear_history: bool = False,
     ) -> None:
-        """Seed / override VP estimate (e.g. from UI sliders). Optionally flush pending history."""
         self.estimated_pitch_deg = float(pitch_deg)
         self.estimated_yaw_deg = float(yaw_deg)
-        if self._svc is None:
-            return
-        self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
-        if clear_history:
-            self._svc.reset()
-            self._svc.set_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
-            self.calibration_success = False
-            self.n_updates = 0
-            self.pitch_yaw_history.clear()
-            self.last_vp = None
+        if self._app is not None:
+            self._app.set_camera_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
+            if clear_history:
+                self._app.reset_camera_calib()
+                self._app.set_camera_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
+                self.pitch_yaw_history.clear()
+                self.n_updates = 0
+                self.calibration_success = False
+                self.last_vp = None
+
+    @property
+    def history_pending(self) -> int:
+        """Best-effort: length of local VP buffer (C++ pending is not exposed)."""
+        return len(self.pitch_yaw_history)
+
+    def reset(self) -> None:
+        self.pitch_yaw_history.clear()
+        self.calibration_success = False
+        self.last_vp = None
+        self.n_updates = 0
+        if self._app is not None:
+            self._app.reset_camera_calib()
+            self._app.set_camera_estimate(self.estimated_pitch_deg, self.estimated_yaw_deg)
+            self._app.set_camera_height(self.camera_height_m)
 
     def update_from_lines(self, line_left: Line2, line_right: Line2, K: np.ndarray) -> bool:
-        """Sample v=m*u+c into UV polylines and feed C++ calibrator."""
+        """Sample v=m*u+c into UV polylines → publish_lane_uv + step → pop_messages."""
+        from pyadas import core as pyadas
+
         K = np.asarray(K, dtype=np.float64)
         fx, fy, cx, cy = float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])
-        self._svc.set_intrinsics(fx, fy, cx, cy)
+        self._app.set_camera_intrinsics(fx, fy, cx, cy)
         w = max(int(round(cx * 2)), 2)
         h = max(int(round(cy * 2)), 2)
         left = _sample_line_uv(line_left, w, h)
         right = _sample_line_uv(line_right, w, h)
-        committed = bool(self._svc.update_from_uv(left, right, 0))
-        last = self._svc.last
+        self._t_us += 1_000_000 // 20  # ~20 Hz host ticks
+        self._app.publish_lane_uv(self._t_us, left, right)
+        self._app.step(self._t_us)
+        last = None
+        for msg in self._app.pop_messages():
+            if isinstance(msg, pyadas.CameraCalibrationState):
+                last = msg
+        if last is None:
+            self.pitch_yaw_history.append([0.0, 0.0])
+            return False
+        committed = int(last.n_updates) > self.n_updates
         self.estimated_pitch_deg = float(last.pitch_deg)
         self.estimated_yaw_deg = float(last.yaw_deg)
         self.calibration_success = bool(last.calibration_success)
         self.n_updates = int(last.n_updates)
         if last.has_vp:
             self.last_vp = (float(last.vp_u), float(last.vp_v))
-        # Mirror pending count for older UI that reads pitch_yaw_history length.
-        pending = self.history_pending
-        self.pitch_yaw_history = [[0.0, 0.0]] * pending
+        if committed:
+            self.pitch_yaw_history.clear()
+        else:
+            self.pitch_yaw_history.append([float(last.pitch_deg), float(last.yaw_deg)])
         return committed
 
     def update_from_image(self, bgr: np.ndarray, K: np.ndarray) -> bool:
@@ -290,8 +296,8 @@ class VanishingPointCalibrator:
             "n_updates": self.n_updates,
             "history_pending": self.history_pending,
             "last_vp": list(self.last_vp) if self.last_vp else None,
-            "method": "AAD vanishing point (C++ CameraCalibService)",
-            "note": "host sim/bag: Hough or GT→UV; roll=0 height prior",
+            "method": "AAD vanishing point (AdasApp Simulated)",
+            "note": "host sim/bag: Hough or GT→UV via publish_lane_uv + step",
         }
 
 

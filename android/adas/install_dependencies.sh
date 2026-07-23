@@ -15,7 +15,7 @@ NDK_VERSION="27.0.12077973"
 # Prefer existing env / buildozer NDK; otherwise install under $HOME/Android/Sdk
 DEFAULT_SDK_HOME="${ANDROID_HOME:-/usr/lib/android-sdk}"
 DEFAULT_NDK_HOME="${HOME}/Android/Sdk/ndk/${NDK_VERSION}"
-BUILDOZER_NDK="${HOME}/atom/flowpilot/cache/buildozer/android/platform/android-ndk-r28c"
+BUILDOZER_NDK="${BUILDOZER_NDK:-}"
 
 print_status()  { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }

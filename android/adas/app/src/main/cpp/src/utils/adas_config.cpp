@@ -1,177 +1,151 @@
 #include "utils/adas_config.h"
 
-#include <cctype>
 #include <fstream>
-#include <sstream>
 #include <string>
+
+#include <json/json.h>
 
 #include "utils/logger.h"
 
-namespace adas {
 namespace {
 
-std::string readFile(const std::string& path, bool* ok)
+void setBool(const Json::Value& o, const char* key, bool& field)
+{
+  if (o.isObject() && o.isMember(key) && o[key].isBool())
+    field = o[key].asBool();
+}
+
+void setDouble(const Json::Value& o, const char* key, double& field)
+{
+  if (o.isObject() && o.isMember(key) && o[key].isNumeric())
+    field = o[key].asDouble();
+}
+
+void setString(const Json::Value& o, const char* key, std::string& field)
+{
+  if (o.isObject() && o.isMember(key) && o[key].isString()) {
+    const std::string v = o[key].asString();
+    if (!v.empty())
+      field = v;
+  }
+}
+
+bool parseFile(const std::string& path, Json::Value* root, std::string* err)
 {
   std::ifstream in(path);
   if (!in) {
-    if (ok)
-      *ok = false;
-    return {};
-  }
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  if (ok)
-    *ok = true;
-  return ss.str();
-}
-
-/** Find `"key"` then skip to `:` and parse bool / number. Keys assumed unique in file. */
-size_t findKey(const std::string& j, const std::string& key)
-{
-  const std::string pat = "\"" + key + "\"";
-  return j.find(pat);
-}
-
-size_t skipWs(const std::string& j, size_t i)
-{
-  while (i < j.size() && std::isspace(static_cast<unsigned char>(j[i])))
-    ++i;
-  return i;
-}
-
-size_t afterColon(const std::string& j, size_t key_pos, size_t key_len)
-{
-  size_t i = skipWs(j, key_pos + key_len);
-  if (i >= j.size() || j[i] != ':')
-    return std::string::npos;
-  return skipWs(j, i + 1);
-}
-
-bool parseBoolAt(const std::string& j, size_t i, bool* out)
-{
-  if (i == std::string::npos || i >= j.size())
-    return false;
-  if (j.compare(i, 4, "true") == 0) {
-    *out = true;
-    return true;
-  }
-  if (j.compare(i, 5, "false") == 0) {
-    *out = false;
-    return true;
-  }
-  return false;
-}
-
-bool parseNumberAt(const std::string& j, size_t i, double* out)
-{
-  if (i == std::string::npos || i >= j.size())
-    return false;
-  try {
-    size_t consumed = 0;
-    *out = std::stod(j.substr(i), &consumed);
-    return consumed > 0;
-  } catch (...) {
+    if (err)
+      *err = "cannot open file";
     return false;
   }
-}
-
-void setBool(const std::string& j, const std::string& key, bool& field)
-{
-  const size_t p = findKey(j, key);
-  if (p == std::string::npos)
-    return;
-  bool v = field;
-  if (parseBoolAt(j, afterColon(j, p, key.size() + 2), &v))
-    field = v;
-}
-
-void setDouble(const std::string& j, const std::string& key, double& field)
-{
-  const size_t p = findKey(j, key);
-  if (p == std::string::npos)
-    return;
-  double v = field;
-  if (parseNumberAt(j, afterColon(j, p, key.size() + 2), &v))
-    field = v;
-}
-
-bool parseStringAt(const std::string& j, size_t i, std::string* out)
-{
-  if (i == std::string::npos || i >= j.size() || j[i] != '"')
-    return false;
-  const size_t start = i + 1;
-  const size_t end = j.find('"', start);
-  if (end == std::string::npos)
-    return false;
-  *out = j.substr(start, end - start);
-  return true;
-}
-
-void setString(const std::string& j, const std::string& key, std::string& field)
-{
-  const size_t p = findKey(j, key);
-  if (p == std::string::npos)
-    return;
-  std::string v;
-  if (parseStringAt(j, afterColon(j, p, key.size() + 2), &v) && !v.empty())
-    field = std::move(v);
+  Json::CharReaderBuilder builder;
+  builder["collectComments"] = false;
+  return Json::parseFromStream(builder, in, root, err);
 }
 
 }  // namespace
 
-AdasRuntimeConfig loadAdasRuntimeConfig(const std::string& path, bool* ok)
+AdasApp::Config AdasApp::Config::forSimulated(double wheelbase_m, double pitch_deg, double yaw_deg,
+                                              double camera_height_m)
 {
-  AdasRuntimeConfig cfg;
-  bool file_ok = false;
-  const std::string j = readFile(path, &file_ok);
-  if (!file_ok || j.empty()) {
-    LOGE("loadAdasRuntimeConfig: cannot read %s — using defaults", path.c_str());
+  Config cfg;
+  cfg.feature_flags.enable_panda = false;
+  cfg.feature_flags.enable_zmq_bridge = false;
+  cfg.feature_flags.enable_lane_keep = true;
+  cfg.feature_flags.enable_localization = true;
+  cfg.feature_flags.enable_camera_calib = true;
+  cfg.feature_flags.enable_imu_calib = true;
+  cfg.feature_flags.enable_vision_supercombo = false;
+
+  cfg.lane_keep.wheelbase_m = wheelbase_m;
+  cfg.localization.wheelbase_m = wheelbase_m;
+  cfg.lane_keep.steer_output_enabled = true;
+
+  cfg.camera_calib.pitch_deg = pitch_deg;
+  cfg.camera_calib.yaw_deg = yaw_deg;
+  cfg.camera_calib.height_m = camera_height_m;
+
+  cfg.imu_calib.mount_roll_deg = 0.0;
+  cfg.imu_calib.mount_pitch_deg = pitch_deg;
+  cfg.imu_calib.mount_yaw_deg = yaw_deg;
+  cfg.imu_calib.has_mount_prior = true;
+  return cfg;
+}
+
+AdasApp::Config AdasApp::Config::loadFromFile(const std::string& path, bool* ok)
+{
+  Config cfg;
+  Json::Value root;
+  std::string err;
+  if (!parseFile(path, &root, &err) || !root.isObject()) {
+    LOGE("AdasApp::Config::loadFromFile: cannot read/parse %s (%s) — using defaults", path.c_str(), err.c_str());
     if (ok)
       *ok = false;
     return cfg;
   }
 
-  setBool(j, "panda", cfg.panda);
-  setBool(j, "zmq_bridge", cfg.zmq_bridge);
-  setBool(j, "lane_keep", cfg.lane_keep);
-  setBool(j, "localization", cfg.localization);
-  setBool(j, "camera_calib", cfg.camera_calib);
+  auto& f = cfg.feature_flags;
+  const Json::Value& nodes = root["nodes"];
+  setBool(nodes, "panda", f.enable_panda);
+  setBool(nodes, "zmq_bridge", f.enable_zmq_bridge);
+  setBool(nodes, "lane_keep", f.enable_lane_keep);
+  setBool(nodes, "localization", f.enable_localization);
+  setBool(nodes, "camera_calib", f.enable_camera_calib);
+  setBool(nodes, "vision_supercombo", f.enable_vision_supercombo);
 
-  const bool had_imu_key = findKey(j, "imu_calib") != std::string::npos;
-  setBool(j, "imu_calib", cfg.imu_calib);
-  if (!had_imu_key) {
-    // Match previous JNI: IMU calib follows localization when key absent.
-    cfg.imu_calib = cfg.localization;
-  }
+  const bool had_imu_key = nodes.isObject() && nodes.isMember("imu_calib");
+  setBool(nodes, "imu_calib", f.enable_imu_calib);
+  if (!had_imu_key)
+    f.enable_imu_calib = f.enable_localization;
 
-  setDouble(j, "wheelbase_m", cfg.wheelbase_m);
-  setDouble(j, "steer_ratio", cfg.steer_ratio);
-  setDouble(j, "max_steer_deg", cfg.max_steer_deg);
-  setDouble(j, "max_torque_cnm", cfg.max_torque_cnm);
-  setDouble(j, "lat_pid_kp", cfg.lat_pid_kp);
-  setDouble(j, "lat_pid_ki", cfg.lat_pid_ki);
-  setDouble(j, "lat_pid_kf", cfg.lat_pid_kf);
-  setDouble(j, "roll", cfg.roll0_deg);
-  setDouble(j, "pitch", cfg.pitch0_deg);
-  setDouble(j, "yaw", cfg.yaw0_deg);
-  setDouble(j, "z_up", cfg.camera_height_m);
-  setDouble(j, "fx", cfg.fx);
-  setDouble(j, "fy", cfg.fy);
-  setDouble(j, "cx", cfg.cx);
-  setDouble(j, "cy", cfg.cy);
-  setString(j, "endpoint_in", cfg.zmq_endpoint_in);
-  setString(j, "endpoint_out", cfg.zmq_endpoint_out);
+  const Json::Value& veh = root["vehicle"];
+  setString(veh, "name", cfg.vehicle_name);
+  setDouble(veh, "wheelbase_m", cfg.lane_keep.wheelbase_m);
+  setDouble(veh, "wheelbase_m", cfg.localization.wheelbase_m);
+  setDouble(veh, "steer_ratio", cfg.lane_keep.steer_ratio);
+  setDouble(veh, "steer_ratio", cfg.topic_convert.steer_ratio);
+  setDouble(veh, "max_steer_deg", cfg.lane_keep.max_steer_deg);
+  setDouble(veh, "max_torque_cnm", cfg.lane_keep.max_torque_cnm);
+  setDouble(veh, "pp_k_dd", cfg.lane_keep.pp_k_dd);
+  setDouble(veh, "pp_ld_min", cfg.lane_keep.pp_ld_min);
+  setDouble(veh, "pp_ld_max", cfg.lane_keep.pp_ld_max);
+  setDouble(veh, "pp_shift", cfg.lane_keep.pp_shift);
+  setDouble(veh, "lat_pid_kp", cfg.lane_keep.pid_kp);
+  setDouble(veh, "lat_pid_ki", cfg.lane_keep.pid_ki);
+  setDouble(veh, "lat_pid_kf", cfg.lane_keep.pid_kf);
+  setDouble(veh, "steer_sign", cfg.lane_keep.steer_sign);
+  cfg.lane_keep.steer_output_enabled = f.enable_lane_keep;
 
-  LOGI("loadAdasRuntimeConfig %s: lane_keep=%d loc=%d cam=%d imu=%d wb=%.3f "
-       "max_steer=%.1f° max_tq=%.0f pid=%.2f/%.2f/%.5f R/P/Y=%.1f/%.1f/%.1f h=%.2f zmq_in=%s zmq_out=%s",
-       path.c_str(), cfg.lane_keep ? 1 : 0, cfg.localization ? 1 : 0, cfg.camera_calib ? 1 : 0, cfg.imu_calib ? 1 : 0,
-       cfg.wheelbase_m, cfg.max_steer_deg, cfg.max_torque_cnm, cfg.lat_pid_kp, cfg.lat_pid_ki, cfg.lat_pid_kf,
-       cfg.roll0_deg, cfg.pitch0_deg, cfg.yaw0_deg, cfg.camera_height_m, cfg.zmq_endpoint_in.c_str(),
-       cfg.zmq_endpoint_out.c_str());
+  const Json::Value& cam = root["calibration"]["camera"];
+  const Json::Value& rpy = cam["rpy_deg"];
+  setDouble(rpy, "roll", cfg.imu_calib.mount_roll_deg);
+  setDouble(rpy, "pitch", cfg.camera_calib.pitch_deg);
+  setDouble(rpy, "pitch", cfg.imu_calib.mount_pitch_deg);
+  setDouble(rpy, "yaw", cfg.camera_calib.yaw_deg);
+  setDouble(rpy, "yaw", cfg.imu_calib.mount_yaw_deg);
+  cfg.imu_calib.has_mount_prior = rpy.isObject();
+
+  const Json::Value& pos = cam["position_m"];
+  setDouble(pos, "z_up", cfg.camera_calib.height_m);
+
+  const Json::Value& K = cam["intrinsics_prior"];
+  setDouble(K, "fx", cfg.camera_calib.fx);
+  setDouble(K, "fy", cfg.camera_calib.fy);
+  setDouble(K, "cx", cfg.camera_calib.cx);
+  setDouble(K, "cy", cfg.camera_calib.cy);
+
+  const Json::Value& zmq = root["zmq"];
+  setString(zmq, "endpoint_in", cfg.zmq_bridge.endpoint_in);
+  setString(zmq, "endpoint_out", cfg.zmq_bridge.endpoint_out);
+
+  LOGI("AdasApp::Config %s: lane_keep=%d loc=%d cam=%d imu=%d wb=%.3f "
+       "max_steer=%.1f° max_tq=%.0f pid=%.2f/%.2f/%.5f P/Y=%.1f/%.1f h=%.2f",
+       path.c_str(), f.enable_lane_keep ? 1 : 0, f.enable_localization ? 1 : 0, f.enable_camera_calib ? 1 : 0,
+       f.enable_imu_calib ? 1 : 0, cfg.lane_keep.wheelbase_m, cfg.lane_keep.max_steer_deg, cfg.lane_keep.max_torque_cnm,
+       cfg.lane_keep.pid_kp, cfg.lane_keep.pid_ki, cfg.lane_keep.pid_kf, cfg.camera_calib.pitch_deg,
+       cfg.camera_calib.yaw_deg, cfg.camera_calib.height_m);
 
   if (ok)
     *ok = true;
   return cfg;
 }
-
-}  // namespace adas

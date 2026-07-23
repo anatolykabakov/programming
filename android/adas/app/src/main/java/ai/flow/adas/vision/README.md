@@ -1,16 +1,30 @@
-# Vision: openpilot supercombo ONNX (simple wrapper)
+# Vision: supercombo ONNX (simple wrapper)
 
-Based on openpilot ~v0.8.x `driving.cc` output layout (same ONNX as
-`openpilot-supercombo-model/supercombo.onnx`, out=6409).
+Based on driving-model `driving.cc` output layout (`supercombo.onnx`, out=6409).
 
 ## Classes
 
 | Class | Role |
 |-------|------|
-| `vision/SupercomboOnnxRunner` | Preprocess + ONNX Runtime infer + parse **plan / lanes / edges** |
+| `vision/ModelCalibWarp` | K + RPY → 3×3 warp (flowpilot `getWrapMatrix` / medmodel) |
+| `vision/SupercomboOnnxRunner` | Warp preprocess + ONNX Runtime + parse plan / lanes / edges |
 | `vision/LaneLines` | 4 lanes + 2 edges + best PLAN path at ego xyz |
 | `vision/LaneOverlayView` | Yellow lanes / red edges / **green PLAN** on camera |
-| `vision/VisionPipeline` | Background thread → overlay + `Logger` (`vision/lanes` protobuf → ZMQ IN) |
+| `vision/CameraOdometry` | Pose slice from model output (for C++ calib) |
+| `vision/VisionPipeline` | Background thread wiring |
+
+## Calib warp
+
+Android params **Roll/Pitch/Yaw** (and `intrinsics_prior` from `config.json`) rebuild the model warp live. Height/X/Y affect overlay / C++ only, not the network input.
+
+## Frames / overlay
+
+- Model outputs kept in **device frame** (X fwd, **Y right+**, Z up) — same as flowpilot `Parser`.
+- Overlay projects with the **same R(rpy)** as the model warp (`ModelCalibWarp`), via
+  `Rt = V·R·V⁻¹` after remap `(Y,Z,X)`. Do **not** use LibGDX
+  `setFromEulerAnglesRad(-pitch,-yaw,-roll)` here — it swaps pitch/yaw vs the warp.
+- Path lift **+1.28 m** on camera-up (after remap), like flowpilot `OnRoadScreen`.
+- C++ `laneLinesToPath` uses flowpilot `lane_planner` mid-lane (`lll+w/2`, `rll-w/2`).
 
 ## Output parse (important)
 
@@ -37,22 +51,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Model
 
-Bundled at **`assets/supercombo.onnx`** (no `models/` dir). Asset name comes from
-`assets/config.json` → `supercombo_asset`.
-
-Load order: `/sdcard/adas_models/<name>` → app filesDir cache → assets root.
+Load order: `/sdcard/adas_models/supercombo.onnx` → app filesDir cache → assets.
 
 ```bash
 adb shell mkdir -p /sdcard/adas_models
-adb push openpilot-supercombo-model/supercombo.onnx /sdcard/adas_models/supercombo.onnx
+adb push /path/to/supercombo.onnx /sdcard/adas_models/supercombo.onnx
 ```
-
-Node feature flags + camera extrinsic priors: `assets/config.json` (see `AdasConfig`).
 
 ## Notes
 
 - Needs 2 frames before first result (temporal stack).
-- Traffic convention input defaults to RHT `[1, 0]`.
-- Bag proto `vision/lanes` also logs `plan_x/y/z` + `plan_hyp`.
-- Lateral axis: this ONNX raw Y is **right-positive**; parse negates to openpilot
-  **Y-left**, overlay uses `u = cx - fx·Y/X`.
+- Bag `vision/lanes.model_out` stores the full ONNX flat vector (~6409) for offline re-parse.

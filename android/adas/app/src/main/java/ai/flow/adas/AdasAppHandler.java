@@ -35,6 +35,7 @@ class AdasAppInstance implements Runnable {
         }
         try {
             AdasAppHandler.nativeStart(this.fd, this.dbcPath, this.configPath);
+            AdasAppHandler.flushPendingLaneKeepParams();
         } catch (Throwable t) {
             Log.e("AdasAppHandler", "nativeStart failed (fd=" + fd + ")", t);
         }
@@ -43,24 +44,18 @@ class AdasAppInstance implements Runnable {
 
 public class AdasAppHandler extends Service {
     String TAG = "AdasAppHandler";
-    /** False when CMake/native build is disabled or .so missing — service still runs for USB/ZMQ. */
+
     public static final boolean nativeLoaded;
 
     private static final String ACTION_USB_PERMISSION = "ai.flow.adas.USB_PERMISSION";
     private static final String DBC_ASSET = "vw_mqb_2010.dbc";
-    private static final String CONFIG_ASSET = "config.json";
-    /** comma.ai panda USB IDs */
+
     private static final int PANDA_VID = 0xbbaa;
     private static final int PANDA_PID = 0xddcc;
 
     private String dbcPath;
     private String configPath;
-    private AdasConfig adasConfig;
 
-    /**
-     * Must keep this alive for the lifetime of native USB use. If GC finalizes it,
-     * Android closes the FD and libusb control OUT/IN break.
-     */
     private UsbDeviceConnection pandaConnection;
     private boolean nativeStarted;
 
@@ -68,8 +63,7 @@ public class AdasAppHandler extends Service {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            System.out.println("RECEIVING INTENT: " + action);
-
+            Log.d(TAG, "USB intent: " + action);
             if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
                 synchronized (this) {
                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
@@ -89,29 +83,22 @@ public class AdasAppHandler extends Service {
         super.onCreate();
         Log.i(TAG, "AdasAppHandler created (nativeLoaded=" + nativeLoaded + ")");
 
-        dbcPath = ensureDbcAsset(this);
+        dbcPath = ensureAssetCopied(this, DBC_ASSET, /*force=*/false);
+        // Keep RuntimeParams.save() across restarts; assets used only if missing.
+        configPath = ensureAssetCopied(this, AdasConfig.ASSET, /*force=*/false);
         Log.i(TAG, "DBC path: " + dbcPath);
-        configPath = ensureConfigAsset(this);
         Log.i(TAG, "Config path: " + configPath);
-        adasConfig = AdasConfig.load(this);
-        Log.i(TAG, "Config lane_keep=" + adasConfig.laneKeep
-                + " localization=" + adasConfig.localization
-                + " camera_calib=" + adasConfig.cameraCalib);
 
-        // Register USB receiver
         IntentFilter filter = new IntentFilter();
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(ACTION_USB_PERMISSION);
 
-        // For Android 14+ (API 34+), we need to specify RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED);
         } else {
             registerReceiver(usbReceiver, filter);
         }
 
-        // Request permission / open already-plugged Panda after a short delay so ONNX
-        // session creation (MainActivity) can finish without RAM contention.
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             UsbManager manager = (UsbManager) getSystemService(Context.USB_SERVICE);
             if (manager == null) {
@@ -124,7 +111,6 @@ public class AdasAppHandler extends Service {
             }
         }, 1500);
 
-        // Start ZMQ Bridge Service
         Intent zmqIntent = new Intent(this, ZMQBridgeService.class);
         startService(zmqIntent);
     }
@@ -132,7 +118,7 @@ public class AdasAppHandler extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "AdasAppHandler starting...");
-        return START_STICKY; // Restart service if killed
+        return START_STICKY;
     }
 
     @Override
@@ -144,6 +130,14 @@ public class AdasAppHandler extends Service {
             unregisterReceiver(usbReceiver);
         }
 
+        if (nativeLoaded && nativeStarted) {
+            try {
+                nativeStop();
+            } catch (Throwable t) {
+                Log.w(TAG, "nativeStop failed", t);
+            }
+        }
+
         if (pandaConnection != null) {
             try {
                 pandaConnection.close();
@@ -152,15 +146,7 @@ public class AdasAppHandler extends Service {
             }
             pandaConnection = null;
         }
-
-        if (nativeStarted) {
-            try {
-                nativeStop();
-            } catch (UnsatisfiedLinkError e) {
-                Log.w(TAG, "nativeStop unavailable", e);
-            }
-            nativeStarted = false;
-        }
+        nativeStarted = false;
 
         Intent zmqIntent = new Intent(this, ZMQBridgeService.class);
         stopService(zmqIntent);
@@ -206,29 +192,17 @@ public class AdasAppHandler extends Service {
             Log.e(TAG, "openDevice returned null for panda");
             return;
         }
-        // Keep reference so GC does not finalize/close the FD under native libusb.
+
         pandaConnection = conn;
         int fd = conn.getFileDescriptor();
-        Log.i(TAG, "USB Device FD: " + fd + " (connection retained; safety/heartbeat in native PandaService)");
-
+        Log.i(TAG, "USB Device FD: " + fd + " (connection retained)");
         nativeStarted = true;
         new Thread(new AdasAppInstance(fd, dbcPath, configPath), "AdasNative").start();
     }
 
-    /** Copy vw_mqb_2010.dbc from APK assets to filesDir so native code can fopen it. */
-    static String ensureDbcAsset(Context context) {
-        return copyAssetToFiles(context, DBC_ASSET);
-    }
-
-    /** Copy config.json from APK assets to filesDir for native AdasApp. */
-    static String ensureConfigAsset(Context context) {
-        return copyAssetToFiles(context, CONFIG_ASSET);
-    }
-
-    static String copyAssetToFiles(Context context, String assetName) {
+    /** Copy asset into filesDir. force=true rewrites so APK config updates take effect. */
+    static String ensureAssetCopied(Context context, String assetName, boolean force) {
         File out = new File(context.getFilesDir(), assetName);
-        // Always refresh config.json so APK asset edits apply without reinstall wipe.
-        final boolean force = "config.json".equals(assetName);
         if (!force && out.exists() && out.length() > 0) {
             return out.getAbsolutePath();
         }
@@ -247,9 +221,39 @@ public class AdasAppHandler extends Service {
         }
     }
 
-    // Native method declarations (only call if nativeLoaded)
     public static native void nativeStart(int fd, String dbcPath, String configPath);
+
     public static native void nativeStop();
+
+    public static native void nativeSetLaneKeepPp(double kDd, double ldMin, double ldMax, double shift);
+
+    public static native void nativeSetSteerRatio(double ratio);
+
+    public static native void nativeSetMaxSteerDeg(double deg);
+
+    private static volatile RuntimeParams pendingLaneKeepParams;
+
+    /** Push PP / ratio into running native stack (queued until after nativeStart). */
+    public static void applyLaneKeepParams(RuntimeParams p) {
+        if (p == null) {
+            return;
+        }
+        pendingLaneKeepParams = p;
+        flushPendingLaneKeepParams();
+    }
+
+    static void flushPendingLaneKeepParams() {
+        RuntimeParams p = pendingLaneKeepParams;
+        if (!nativeLoaded || p == null) {
+            return;
+        }
+        try {
+            nativeSetLaneKeepPp(p.ppKdd, p.ppLdMin, p.ppLdMax, p.ppShift);
+            nativeSetSteerRatio(p.steerRatio);
+        } catch (Throwable t) {
+            Log.w("AdasAppHandler", "applyLaneKeepParams failed", t);
+        }
+    }
 
     static {
         boolean ok = false;
@@ -258,7 +262,6 @@ public class AdasAppHandler extends Service {
             ok = true;
             Log.i("AdasAppHandler", "Loaded libadas_app_android.so");
         } catch (UnsatisfiedLinkError e) {
-            // externalNativeBuild is commented out in app/build.gradle — vision/ONNX path still works
             Log.e("AdasAppHandler", "libadas_app_android.so missing; native panda path disabled", e);
         }
         nativeLoaded = ok;

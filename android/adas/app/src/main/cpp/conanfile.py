@@ -12,7 +12,6 @@ class AdasCppConan(ConanFile):
         "tests": False,
         "python_bindings": False,
         "zeromq/*:encryption": False,
-        # Avoid libudev/system (and match Android); build from recipe if binary download fails
         "libusb/*:enable_udev": False,
     }
 
@@ -20,13 +19,14 @@ class AdasCppConan(ConanFile):
         self.requires("protobuf/3.21.12")
         self.requires("cppzmq/4.10.0")
         self.requires("libusb/1.0.26")
+        self.requires("jsoncpp/1.9.6")
+        self.requires("eigen/3.4.0")
         if self.options.tests:
             self.requires("gtest/1.14.0")
         if self.options.python_bindings:
             self.requires("pybind11/2.11.1")
 
     def build_requirements(self):
-        # Host protoc for protobuf_generate_cpp when cross-compiling
         self.tool_requires("protobuf/3.21.12")
 
     def generate(self):

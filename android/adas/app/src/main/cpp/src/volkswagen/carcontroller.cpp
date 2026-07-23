@@ -5,9 +5,8 @@
 
 namespace volkswagen {
 
-int CarController::apply_driver_steer_torque_limits(int apply_torque, float driver_torque) const
+int applyDriverSteerTorqueLimits(int apply_torque, float driver_torque, int apply_steer_last)
 {
-  // Port of selfdrive/car/__init__.py apply_driver_steer_torque_limits
   using P = CarControllerParams;
   const float driver_max_torque =
       P::STEER_MAX + (P::STEER_DRIVER_ALLOWANCE + driver_torque * P::STEER_DRIVER_FACTOR) * P::STEER_DRIVER_MULTIPLIER;
@@ -19,13 +18,13 @@ int CarController::apply_driver_steer_torque_limits(int apply_torque, float driv
   apply_torque =
       static_cast<int>(std::round(std::clamp(static_cast<float>(apply_torque), min_steer_allowed, max_steer_allowed)));
 
-  if (apply_steer_last_ > 0) {
-    const int lo = std::max(apply_steer_last_ - P::STEER_DELTA_DOWN, -P::STEER_DELTA_UP);
-    const int hi = apply_steer_last_ + P::STEER_DELTA_UP;
+  if (apply_steer_last > 0) {
+    const int lo = std::max(apply_steer_last - P::STEER_DELTA_DOWN, -P::STEER_DELTA_UP);
+    const int hi = apply_steer_last + P::STEER_DELTA_UP;
     apply_torque = std::clamp(apply_torque, lo, hi);
   } else {
-    const int lo = apply_steer_last_ - P::STEER_DELTA_UP;
-    const int hi = std::min(apply_steer_last_ + P::STEER_DELTA_DOWN, P::STEER_DELTA_UP);
+    const int lo = apply_steer_last - P::STEER_DELTA_UP;
+    const int hi = std::min(apply_steer_last + P::STEER_DELTA_DOWN, P::STEER_DELTA_UP);
     apply_torque = std::clamp(apply_torque, lo, hi);
   }
   return apply_torque;
@@ -36,15 +35,7 @@ std::vector<can_frame> CarController::update(const CarControl& CC, const CarStat
   std::vector<can_frame> can_sends;
   using P = CarControllerParams;
 
-  // **** Steering Controls ****************************************************
   if (frame_ % P::STEER_STEP == 0) {
-    // Logic to avoid HCA state 4 "refused" (carcontroller.py comments):
-    //   * Don't steer unless HCA is ready(3) or active(5)
-    //   * Don't steer at standstill
-    //   * Don't send > 3.00 Nm
-    //   * Don't send the same torque for > ~1.9s
-    //   * Don't send uninterrupted steering for > ~118s
-
     int apply_steer = 0;
     bool hca_enabled = false;
 
@@ -59,14 +50,14 @@ std::vector<can_frame> CarController::update(const CarControl& CC, const CarStat
       } else {
         new_steer = static_cast<int>(std::round(CC.actuators.steer * P::STEER_MAX));
       }
-      apply_steer = apply_driver_steer_torque_limits(new_steer, CS.steeringTorque);
+      apply_steer = applyDriverSteerTorqueLimits(new_steer, CS.steeringTorque, apply_steer_last_);
 
       if (apply_steer == 0) {
         hca_enabled = false;
         hca_enabled_frame_count_ = 0;
       } else {
         hca_enabled_frame_count_ += 1;
-        // 118s at 50Hz HCA (STEER_STEP=2 @ 100Hz → one HCA every 2 frames)
+
         if (hca_enabled_frame_count_ >= 118 * (100 / P::STEER_STEP)) {
           hca_enabled = false;
           hca_enabled_frame_count_ = 0;
@@ -93,7 +84,6 @@ std::vector<can_frame> CarController::update(const CarControl& CC, const CarStat
     can_sends.push_back(create_steering_control(CanBus::pt, apply_steer, hca_enabled, &hca_counter_));
   }
 
-  // **** HUD Controls (LDW_02) — lane icon on cluster *************************
   if (frame_ % P::LDW_STEP == 0) {
     int hud_alert = 0;
     if (CC.visualAlert == P::LDW_MSG_TAKE_OVER) {

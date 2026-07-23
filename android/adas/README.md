@@ -1,6 +1,8 @@
 # ADAS (Android + C++)
 
-Приложение для записи сенсоров / vision и нативного стека ADAS на телефоне (Panda USB, ZMQ, lane-keep, localization, VP-calib). Алгоритмы — в C++; Python — sim, bag visualizer и обёртки над `pyadas`.
+Приложение для записи сенсоров / vision и нативного стека ADAS на телефоне (Panda USB, ZMQ, lane-keep, localization, VP-calib).
+
+**Алгоритмы только в C++** (сервисы внутри `AdasApp`). Python — bag visualizer, MetaDrive sim и тонкие обёртки: publish входов → `step` → `pop_messages`.
 
 Все команды ниже — из корня проекта:
 
@@ -42,10 +44,10 @@ adas/                              ← корень (здесь README и run_*.
 
 | Путь | Назначение |
 |---|---|
-| `include/adas_app.h` | RealTime / Simulated app |
-| `include/services/` | Panda, ZmqBridge, TopicConvert, LaneKeep, Localization, CameraCalib |
+| `include/adas_app.h` | RealTime (телефон) / Simulated (host) |
+| `include/services/` | Panda, ZmqBridge, TopicConvert, LaneKeep, Localization, CameraCalib, InternalSubscriber |
 | `include/utils/` | PurePursuit, EKF, VP calib, topic convert |
-| `src/python/` | pybind11 → `pyadas` |
+| `src/python/` | pybind11 → `pyadas` (только `AdasApp` + DTO) |
 | `scripts/build_cpp.sh` | Conan + CMake (`-t android\|linux [--python]`) |
 
 ### Assets (`app/src/main/assets/`)
@@ -53,17 +55,43 @@ adas/                              ← корень (здесь README и run_*.
 | Файл | Назначение |
 |---|---|
 | `config.json` | флаги нод + priors калибровки / vehicle |
-| `supercombo.onnx` | модель разметки |
+| `supercombo.onnx` | модель разметки (`assets/`; host ищет её автоматически) |
 | `vw_mqb_2010.dbc` | CAN Golf / MQB |
 
 ### Python (`app/src/main/scripts/`)
 
 | Путь | Назначение |
 |---|---|
-| `vis/interactive_visualizer.py` | просмотр bag |
-| `sim/main.py` | MetaDrive lane-keep |
-| `core/` | обёртки C++ + IMU/Hough/viz |
+| `vis/interactive_visualizer.py` | просмотр bag (линии из `vision/lanes` по умолчанию) |
+| `sim/main.py` | MetaDrive lane-keep через `AdasApp` |
+| `core/` | glue: lane_keep, VP Hough, viz (без своих алгоритмов управления) |
 | `pyadas/` | `core*.so` после linux `--python` |
+
+## Host API (`pyadas`)
+
+Симулированный `AdasApp` — тот же каркас, что на телефоне. Сервисы и алгоритмы в Python **не** экспортируются.
+
+```python
+from pyadas import AdasApp, LaneKeepOutput, LocalizationPose, CameraCalibrationState
+
+app = AdasApp(wheelbase=2.636, pitch0_deg=0.0, camera_height=1.40)
+app.publish_chassis(t_us, speed_mps=10.0, steer_rad=0.0)
+app.publish_lanes(t_us, [(1, 0), (10, 0.1), (30, 0.2)])
+app.publish_gps(t_us, x, y)
+app.publish_imu(t_us, yaw_rate)
+app.publish_lane_uv(t_us, left_uv, right_uv)
+app.step(t_us)
+
+for msg in app.pop_messages():
+    if isinstance(msg, LaneKeepOutput):
+        ...
+    elif isinstance(msg, LocalizationPose):
+        ...
+    elif isinstance(msg, CameraCalibrationState):
+        ...
+```
+
+Подробнее: [`app/src/main/cpp/src/python/README.md`](app/src/main/cpp/src/python/README.md).
 
 ## Сборка
 
@@ -96,27 +124,36 @@ pip install -r app/src/main/scripts/sim/requirements.txt   # metadrive-simulator
 
 ```bash
 ./run_bag_vis.sh /path/to/bag_session
-# эквивалент:
-PYTHONPATH=app/src/main/scripts python3 app/src/main/scripts/interactive_visualizer.py /path/to/bag_session
 ```
 
 Session dir или `.zip` / `.tar.gz`. Нужен собранный `pyadas`.
 
+| UI | Смысл |
+|---|---|
+| **Lanes → Bag** | оверлей из `vision/lanes` (по умолчанию; ONNX на хосте не нужен) |
+| **Lanes → Runtime** | локальный `supercombo.onnx` с **тем же** calib warp + RNN, что Android |
+| **VP calib** | vanishing-point через `AdasApp` (`publish_lane_uv` → `step` → `pop_messages`) |
+| **PP** | Pure Pursuit через `AdasApp`; polyline = `laneLinesToPath` (device Y-right), как TopicConvert |
+
+Паритет кадров/PP: [`docs/HOST_ANDROID_PARITY.md`](docs/HOST_ANDROID_PARITY.md).
+
 ## Запуск MetaDrive sim
 
 ```bash
-./run_sim.sh --controller pure_pursuit --show --lanes supercombo --compare-gt
-./run_sim.sh --lanes gt --vp-source gt --show
+./run_sim.sh --controller pure_pursuit --show --lanes gt
+./run_sim.sh --controller pure_pursuit --show --lanes supercombo
+./run_sim.sh --controller straight --show
 ```
-
-С `--show` открывается **Tk UI как у bag visualizer**: камера + траектория + живые слайдеры RPY/Height и Pure Pursuit (`K_dd`, `Ld_*`, `shift`, `L_wb`), тогглы VP / lanes / supercombo. Старые OpenCV-окна: `--show --cv-show`.
 
 | Флаг | Смысл |
 |---|---|
-| `--controller` | `straight` / `pure_pursuit` / `lateral_pd` |
-| `--lanes` | `gt` или `supercombo` |
+| `--controller` | `straight` / `pure_pursuit` |
+| `--lanes` | `gt` (MetaDrive GT) или `supercombo` (нужен ONNX) |
+| `--pp-on` | при `supercombo`: `plan` (default) или `lanes` |
 | `--show` | окно с overlay |
-| `--compare-gt` | сравнение с GT lanes |
+| `--overlay` | сохранять кадры с overlay в `--out-dir` |
+
+Управление — только C++ `LaneKeepService` через Simulated `AdasApp` (не Python PD).
 
 ## Runtime (телефон)
 
@@ -125,16 +162,10 @@ Camera/ONNX → vision/lanes ─┐
 Sensors / Panda ────────────┼─► Logger ─► ZMQ IN :5555
                             │              ▼
                             │         ZmqBridge → TopicConvert
-                            │              │
-                            │              ├─ vision/path → LaneKeep*
-                            │              ├─ vehicle/chassis → LaneKeep* / Localization*
-                            │              ├─ sensors/gps/location (GpsSample ENU) → Localization*
-                            │              └─ sensors/imu_raw → ImuCalibService*
-                            │                     prior R + quiet-lock → sensors/imu_yaw
-                            │                                  ▼
-                            │                           Localization*
+                            │              ▼
+                            │         LaneKeep / Localization / Calib
                             └◄── ZMQ OUT :5556 → BagLogger
-* gated by assets/config.json (lane_keep / localization); steer torque only if lane_keep=true
 ```
 
-Подробнее: [`app/src/main/cpp/src/python/README.md`](app/src/main/cpp/src/python/README.md).
+Подробная цепочка камера→HCA CAN: [`docs/IMAGE_TO_CAN_PIPELINE.md`](docs/IMAGE_TO_CAN_PIPELINE.md).
+Аудит vs flowpilot (PP + ONNX): [`docs/ADAS_AUDIT.md`](docs/ADAS_AUDIT.md).

@@ -5,14 +5,13 @@
 #include <cstdint>
 #include <vector>
 
+#include <Eigen/Dense>
+
 #include "utils/adas_topics.h"
+#include "utils/math_utils.h"
 
 namespace adas {
 
-/**
- * Live extrinsic calibrator — flowpilot/openpilot calibrationd.
- * Input: model pose (cameraOdometry) + optional v_ego. No image CV.
- */
 class PoseCalibrator {
 public:
   enum Status { Uncalibrated = 0, Calibrated = 1, Invalid = 2, Recalibrating = 3 };
@@ -34,7 +33,7 @@ public:
   int calPercent() const;
   bool calibrated() const { return status_ == Calibrated; }
 
-  std::array<double, 3> smoothRpy() const;
+  Vec3 smoothRpy() const;
 
 private:
   void updateStatus();
@@ -51,10 +50,10 @@ private:
 
   double height_m_ = 1.22;
   double v_ego_ = 0.0;
-  std::array<double, 3> rpy_{{0, 0, 0}};
-  std::array<std::array<double, 3>, kInputsWanted> rpys_{};
-  std::array<double, 3> old_rpy_{{0, 0, 0}};
-  std::array<double, 3> calib_spread_{{0, 0, 0}};
+  Vec3 rpy_ = Vec3::Zero();
+  std::array<Vec3, kInputsWanted> rpys_{};
+  Vec3 old_rpy_ = Vec3::Zero();
+  Vec3 calib_spread_ = Vec3::Zero();
   double old_rpy_weight_ = 0.0;
   int valid_blocks_ = 0;
   int idx_ = 0;

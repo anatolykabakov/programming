@@ -1,59 +1,18 @@
 #include "utils/vehicle_ekf.h"
 
-#include <algorithm>
+#include <cmath>
 
 namespace adas {
-namespace {
-
-void matMul5(const std::array<double, 25>& A, const std::array<double, 25>& B, std::array<double, 25>& C)
-{
-  for (int i = 0; i < 5; ++i) {
-    for (int j = 0; j < 5; ++j) {
-      double s = 0.0;
-      for (int k = 0; k < 5; ++k)
-        s += A[i * 5 + k] * B[k * 5 + j];
-      C[i * 5 + j] = s;
-    }
-  }
-}
-
-void matTranspose5(const std::array<double, 25>& A, std::array<double, 25>& AT)
-{
-  for (int i = 0; i < 5; ++i)
-    for (int j = 0; j < 5; ++j)
-      AT[j * 5 + i] = A[i * 5 + j];
-}
-
-void matAdd5(std::array<double, 25>& A, const std::array<double, 25>& B)
-{
-  for (int i = 0; i < 25; ++i)
-    A[i] += B[i];
-}
-
-bool invert2x2(const double S[4], double Sinv[4])
-{
-  const double det = S[0] * S[3] - S[1] * S[2];
-  if (std::abs(det) < 1e-12)
-    return false;
-  const double inv = 1.0 / det;
-  Sinv[0] = S[3] * inv;
-  Sinv[1] = -S[1] * inv;
-  Sinv[2] = -S[2] * inv;
-  Sinv[3] = S[0] * inv;
-  return true;
-}
-
-}  // namespace
 
 VehicleEKF::VehicleEKF(double wheelbase_, double gps_noise_pos, double imu_noise_yaw_rate) : wheelbase(wheelbase_)
 {
-  Q_.fill(0.0);
-  at(Q_, 0, 0) = 0.1 * 0.1;
-  at(Q_, 1, 1) = 0.1 * 0.1;
-  at(Q_, 2, 2) = 0.01 * 0.01;
-  at(Q_, 3, 3) = 0.5 * 0.5;
-  at(Q_, 4, 4) = 0.05 * 0.05;
-  R_gps_ = {gps_noise_pos * gps_noise_pos, 0.0, 0.0, gps_noise_pos * gps_noise_pos};
+  Q_.setZero();
+  Q_(0, 0) = 0.1 * 0.1;
+  Q_(1, 1) = 0.1 * 0.1;
+  Q_(2, 2) = 0.01 * 0.01;
+  Q_(3, 3) = 0.5 * 0.5;
+  Q_(4, 4) = 0.05 * 0.05;
+  R_gps_ = Mat2::Identity() * (gps_noise_pos * gps_noise_pos);
   R_imu_ = imu_noise_yaw_rate * imu_noise_yaw_rate;
   reset();
 }
@@ -61,126 +20,180 @@ VehicleEKF::VehicleEKF(double wheelbase_, double gps_noise_pos, double imu_noise
 void VehicleEKF::reset(double x, double y, double yaw, double v, double yaw_rate, double pos_unc, double yaw_unc,
                        double v_unc, double yaw_rate_unc)
 {
-  state_ = {x, y, yaw, v, yaw_rate};
-  P_.fill(0.0);
-  at(P_, 0, 0) = pos_unc * pos_unc;
-  at(P_, 1, 1) = pos_unc * pos_unc;
-  at(P_, 2, 2) = yaw_unc * yaw_unc;
-  at(P_, 3, 3) = v_unc * v_unc;
-  at(P_, 4, 4) = yaw_rate_unc * yaw_rate_unc;
-  prediction_count = gps_update_count = gps_rejected_count = imu_update_count = 0;
+  state_ << x, y, yaw, v, yaw_rate;
+  P_.setZero();
+  P_(0, 0) = pos_unc * pos_unc;
+  P_(1, 1) = pos_unc * pos_unc;
+  P_(2, 2) = yaw_unc * yaw_unc;
+  P_(3, 3) = v_unc * v_unc;
+  P_(4, 4) = yaw_rate_unc * yaw_rate_unc;
+  prediction_count = gps_update_count = gps_rejected_count = gps_reseed_count = 0;
+  gps_yaw_update_count = gps_vel_update_count = imu_update_count = cam_odo_update_count = 0;
+  consecutive_gps_rejects_ = 0;
 }
 
 void VehicleEKF::predict(double v_measured, double steering_angle, double dt)
 {
-  const double x = state_[0], y = state_[1], yaw = state_[2], v = state_[3];
+  const double x = state_(0);
+  const double y = state_(1);
+  const double yaw = state_(2);
+  const double v = state_(3);
+
   double yaw_rate_pred = 0.0;
   if (std::abs(steering_angle) > 0.001 && std::abs(v_measured) > 0.01) {
     yaw_rate_pred = v_measured * std::tan(steering_angle) / wheelbase;
   }
-  state_[0] = x + v * std::cos(yaw) * dt;
-  state_[1] = y + v * std::sin(yaw) * dt;
-  state_[2] = normalizeAngle(yaw + yaw_rate_pred * dt);
-  state_[3] = v_measured;
-  state_[4] = yaw_rate_pred;
 
-  std::array<double, 25> F{};
-  for (int i = 0; i < 5; ++i)
-    at(F, i, i) = 1.0;
-  at(F, 0, 2) = -v * std::sin(yaw) * dt;
-  at(F, 0, 3) = std::cos(yaw) * dt;
-  at(F, 1, 2) = v * std::cos(yaw) * dt;
-  at(F, 1, 3) = std::sin(yaw) * dt;
-  at(F, 2, 4) = dt;
+  state_(0) = x + v * std::cos(yaw) * dt;
+  state_(1) = y + v * std::sin(yaw) * dt;
+  state_(2) = normalizeAngle(yaw + yaw_rate_pred * dt);
+  state_(3) = v_measured;
+  state_(4) = yaw_rate_pred;
 
-  std::array<double, 25> FT{}, FP{}, FPFT{};
-  matTranspose5(F, FT);
-  matMul5(F, P_, FP);
-  matMul5(FP, FT, FPFT);
-  P_ = FPFT;
-  matAdd5(P_, Q_);
+  Mat5 F = Mat5::Identity();
+  F(0, 2) = -v * std::sin(yaw) * dt;
+  F(0, 3) = std::cos(yaw) * dt;
+  F(1, 2) = v * std::cos(yaw) * dt;
+  F(1, 3) = std::sin(yaw) * dt;
+  F(2, 4) = dt;
+
+  P_ = F * P_ * F.transpose() + Q_;
   ++prediction_count;
 }
 
-bool VehicleEKF::updateGps(double gps_x, double gps_y, double max_innovation)
+VehicleEKF::GpsPosResult VehicleEKF::updateGps(double gps_x, double gps_y, double max_innovation,
+                                               double reseed_innovation)
 {
-  const double innov[2] = {gps_x - state_[0], gps_y - state_[1]};
-  const double mag = std::sqrt(innov[0] * innov[0] + innov[1] * innov[1]);
+  const Vec2 innov(gps_x - state_(0), gps_y - state_(1));
+  const double mag = innov.norm();
+
+  if (mag > reseed_innovation || (mag > max_innovation && consecutive_gps_rejects_ >= 4)) {
+    state_(0) = gps_x;
+    state_(1) = gps_y;
+    P_(0, 0) = std::max(P_(0, 0), 25.0);
+    P_(1, 1) = std::max(P_(1, 1), 25.0);
+    P_(2, 2) = std::max(P_(2, 2), 0.25);
+    consecutive_gps_rejects_ = 0;
+    ++gps_reseed_count;
+    ++gps_update_count;
+    return GpsPosResult::Reseeded;
+  }
+
   if (mag > max_innovation) {
     ++gps_rejected_count;
-    return false;
+    ++consecutive_gps_rejects_;
+    return GpsPosResult::Rejected;
   }
 
-  // S = H P H^T + R, H selects x,y
-  double S[4] = {at(P_, 0, 0) + R_gps_[0], at(P_, 0, 1) + R_gps_[1], at(P_, 1, 0) + R_gps_[2],
-                 at(P_, 1, 1) + R_gps_[3]};
-  double Sinv[4];
-  if (!invert2x2(S, Sinv))
-    return false;
+  Mat25 H = Mat25::Zero();
+  H(0, 0) = 1.0;
+  H(1, 1) = 1.0;
 
-  // K (5x2) = P H^T Sinv
-  double K[10];
-  for (int i = 0; i < 5; ++i) {
-    const double p0 = at(P_, i, 0), p1 = at(P_, i, 1);
-    K[i * 2 + 0] = p0 * Sinv[0] + p1 * Sinv[2];
-    K[i * 2 + 1] = p0 * Sinv[1] + p1 * Sinv[3];
+  // Soften R when innovation is large but still accepted.
+  Mat2 R = R_gps_;
+  if (mag > 0.5 * max_innovation) {
+    const double scale = (mag / max_innovation) * (mag / max_innovation);
+    R *= std::max(1.0, 4.0 * scale);
   }
 
-  for (int i = 0; i < 5; ++i)
-    state_[i] += K[i * 2] * innov[0] + K[i * 2 + 1] * innov[1];
-  state_[2] = normalizeAngle(state_[2]);
+  const Mat2 S = H * P_ * H.transpose() + R;
+  Eigen::FullPivLU<Mat2> lu(S);
+  if (!lu.isInvertible()) {
+    ++gps_rejected_count;
+    ++consecutive_gps_rejects_;
+    return GpsPosResult::Rejected;
+  }
 
-  // Joseph form: P = (I-KH) P (I-KH)^T + K R K^T
-  std::array<double, 25> IKH{};
-  for (int i = 0; i < 5; ++i)
-    at(IKH, i, i) = 1.0;
-  for (int i = 0; i < 5; ++i) {
-    at(IKH, i, 0) -= K[i * 2];
-    at(IKH, i, 1) -= K[i * 2 + 1];
-  }
-  std::array<double, 25> IKHT{}, TMP{}, NEWP{};
-  matTranspose5(IKH, IKHT);
-  matMul5(IKH, P_, TMP);
-  matMul5(TMP, IKHT, NEWP);
-  for (int i = 0; i < 5; ++i) {
-    for (int j = 0; j < 5; ++j) {
-      NEWP[i * 5 + j] += K[i * 2] * (R_gps_[0] * K[j * 2] + R_gps_[1] * K[j * 2 + 1]) +
-                         K[i * 2 + 1] * (R_gps_[2] * K[j * 2] + R_gps_[3] * K[j * 2 + 1]);
-    }
-  }
-  P_ = NEWP;
+  const Mat52 K = P_ * H.transpose() * lu.inverse();
+  state_ += K * innov;
+  state_(2) = normalizeAngle(state_(2));
+
+  const Mat5 IKH = Mat5::Identity() - K * H;
+  P_ = IKH * P_ * IKH.transpose() + K * R * K.transpose();
+  consecutive_gps_rejects_ = 0;
   ++gps_update_count;
+  return GpsPosResult::Accepted;
+}
+
+bool VehicleEKF::updateGpsYaw(double yaw_enu, double R_yaw, bool force)
+{
+  if (!(R_yaw > 0.0) || !std::isfinite(yaw_enu))
+    return false;
+  const double innov = normalizeAngle(yaw_enu - state_(2));
+  // Gate wild course jumps (e.g. GPS bearing glitch), unless caller forces snap path.
+  if (!force && std::abs(innov) > 1.2)
+    return false;  // ~70°
+
+  const double S = P_(2, 2) + R_yaw;
+  if (std::abs(S) < 1e-12)
+    return false;
+  const double K = P_(2, 2) / S;
+  state_(2) = normalizeAngle(state_(2) + K * innov);
+  // Joseph-lite on yaw variance + cross-cov shrinkage.
+  for (int i = 0; i < 5; ++i) {
+    if (i == 2)
+      continue;
+    P_(2, i) *= (1.0 - K);
+    P_(i, 2) = P_(2, i);
+  }
+  P_(2, 2) = (1.0 - K) * P_(2, 2) * (1.0 - K) + K * R_yaw * K;
+  ++gps_yaw_update_count;
   return true;
 }
 
-void VehicleEKF::updateImu(double yaw_rate_imu)
+bool VehicleEKF::updateGpsVel(double vx_east, double vy_north, double R_vel)
 {
-  const double innov = yaw_rate_imu - state_[4];
-  const double S = at(P_, 4, 4) + R_imu_;
+  if (!(R_vel > 0.0) || !std::isfinite(vx_east) || !std::isfinite(vy_north))
+    return false;
+  const double yaw = state_(2);
+  const double c = std::cos(yaw), s = std::sin(yaw);
+  // z = [vx, vy] = v * [cos ψ, sin ψ]  (ENU)
+  const Vec2 z_pred(state_(3) * c, state_(3) * s);
+  const Vec2 innov(vx_east - z_pred(0), vy_north - z_pred(1));
+  if (innov.norm() > 15.0)
+    return false;
+
+  Mat25 H = Mat25::Zero();
+  H(0, 2) = -state_(3) * s;
+  H(0, 3) = c;
+  H(1, 2) = state_(3) * c;
+  H(1, 3) = s;
+  const Mat2 R = Mat2::Identity() * R_vel;
+  const Mat2 S = H * P_ * H.transpose() + R;
+  Eigen::FullPivLU<Mat2> lu(S);
+  if (!lu.isInvertible())
+    return false;
+  const Mat52 K = P_ * H.transpose() * lu.inverse();
+  state_ += K * innov;
+  state_(2) = normalizeAngle(state_(2));
+  const Mat5 IKH = Mat5::Identity() - K * H;
+  P_ = IKH * P_ * IKH.transpose() + K * R * K.transpose();
+  ++gps_vel_update_count;
+  return true;
+}
+
+void VehicleEKF::applyYawRateUpdate(double yaw_rate_meas, double R, bool count_as_cam)
+{
+  if (!std::isfinite(yaw_rate_meas) || !(R > 0.0))
+    return;
+  const double innov = yaw_rate_meas - state_(4);
+  const double S = P_(4, 4) + R;
   if (std::abs(S) < 1e-12)
     return;
-  const double Sinv = 1.0 / S;
-  double K[5];
-  for (int i = 0; i < 5; ++i)
-    K[i] = at(P_, i, 4) * Sinv;
-  for (int i = 0; i < 5; ++i)
-    state_[i] += K[i] * innov;
-  state_[2] = normalizeAngle(state_[2]);
 
-  std::array<double, 25> IKH{};
-  for (int i = 0; i < 5; ++i)
-    at(IKH, i, i) = 1.0;
-  for (int i = 0; i < 5; ++i)
-    at(IKH, i, 4) -= K[i];
-  std::array<double, 25> IKHT{}, TMP{}, NEWP{};
-  matTranspose5(IKH, IKHT);
-  matMul5(IKH, P_, TMP);
-  matMul5(TMP, IKHT, NEWP);
-  for (int i = 0; i < 5; ++i)
-    for (int j = 0; j < 5; ++j)
-      NEWP[i * 5 + j] += K[i] * R_imu_ * K[j];
-  P_ = NEWP;
-  ++imu_update_count;
+  Eigen::Matrix<double, 1, 5> H = Eigen::Matrix<double, 1, 5>::Zero();
+  H(0, 4) = 1.0;
+  const Vec5 K = P_ * H.transpose() / S;
+  state_ += K * innov;
+  state_(2) = normalizeAngle(state_(2));
+
+  const Mat5 IKH = Mat5::Identity() - K * H;
+  P_ = IKH * P_ * IKH.transpose() + (R * K) * K.transpose();
+  if (count_as_cam) {
+    ++cam_odo_update_count;
+  } else {
+    ++imu_update_count;
+  }
 }
 
 }  // namespace adas

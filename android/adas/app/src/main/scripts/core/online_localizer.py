@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
-"""Online (streaming) localization and IMU processing.
+"""Bag / sim localization helpers (IMU warm-up, trajectory HUD).
 
-All ADAS algorithms that must run live share a ``.step()`` / ``.push()`` API:
-
-  - ``LaneKeepController`` / Pure Pursuit / VP calib — already per-frame
-  - ``SupercomboBev.infer`` — already per-frame
-  - ``OnlineImuProcessor`` — gyro bias + phone→vehicle yaw rate
-  - ``OnlineLocalizer`` — bicycle odom + VehicleEKF (+ GPS/IMU updates)
-
-Batch bag helpers (``calculate_trajectory_ekf``, ``process_imu_for_odometry``)
-are thin wrappers that call these online classes sample-by-sample.
+Algorithm path: ``AdasApp`` publish gps/imu/chassis → step → pop_messages(LocalizationPose).
 """
 
 from __future__ import annotations
@@ -20,26 +12,18 @@ from typing import List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from pyadas import core as pyadas
+
 from .imu_utils import (
     calculate_rotation_matrix_from_gravity,
     calibrate_gyro_bias,
     detect_phone_orientation,
     transform_gyro_to_vehicle_frame,
 )
-from .native import require_cpp
-from .ekf import VehicleEKF
-
-# ---------------------------------------------------------------------------
-# IMU (streaming)
-# ---------------------------------------------------------------------------
 
 
 class OnlineImuProcessor:
-    """Calibrate gyro online from low-speed samples, then emit vehicle yaw_rate.
-
-    Warm-up: while ``not ready``, accumulate stationary IMU when speed is low.
-    After calib: each ``push`` returns yaw_rate [rad/s] in vehicle frame.
-    """
+    """Calibrate gyro online from low-speed samples, then emit vehicle yaw_rate."""
 
     def __init__(
         self,
@@ -85,8 +69,6 @@ class OnlineImuProcessor:
             return
         orient = np.stack(self._orient_buf, axis=0)
         bias_src = np.stack(self._bias_buf, axis=0)
-        # detect_phone_orientation / calibrate_gyro_bias expect (N,10) with ts col
-        # Build fake timestamps
         n_o = orient.shape[0]
         n_b = bias_src.shape[0]
         imu_o = np.concatenate([np.arange(n_o, dtype=np.float64)[:, None], orient], axis=1)
@@ -110,7 +92,6 @@ class OnlineImuProcessor:
         my: float = 0.0,
         mz: float = 0.0,
     ) -> Optional[float]:
-        """Ingest one IMU sample. Returns vehicle yaw_rate [rad/s] when calibrated."""
         sample9 = np.array([ax, ay, az, gx, gy, gz, mx, my, mz], dtype=np.float64)
         if not self.ready:
             if self._speed_mps < self.speed_threshold_orientation:
@@ -135,7 +116,6 @@ class OnlineImuProcessor:
         imu_data: np.ndarray,
         speeds_mps: np.ndarray,
     ) -> dict:
-        """Run online processor over a bag (same outputs as process_imu_for_odometry)."""
         self.reset_calibration()
         n = len(imu_data)
         yaw = np.full(n, np.nan, dtype=np.float64)
@@ -155,7 +135,6 @@ class OnlineImuProcessor:
             )
             if yr is not None:
                 yaw[i] = yr
-        # Fill leading NaNs with first valid (for trajectory integrators)
         valid = np.isfinite(yaw)
         if np.any(valid):
             first = float(yaw[np.argmax(valid)])
@@ -164,7 +143,7 @@ class OnlineImuProcessor:
             yaw = np.zeros(n, dtype=np.float64)
         return {
             "yaw_rate": yaw,
-            "imu_calibrated": imu_data,  # timestamps preserved; bias applied in push
+            "imu_calibrated": imu_data,
             "bias": self.bias,
             "rotation_matrix": self.rotation_matrix,
             "orientation_info": self.orientation_info,
@@ -172,23 +151,17 @@ class OnlineImuProcessor:
         }
 
 
-# ---------------------------------------------------------------------------
-# Localization (streaming)
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class TrajectoryBuffers:
     """World-frame polylines for compare / HUD."""
 
-    ref_x: List[float] = field(default_factory=list)  # GT or GPS track
+    ref_x: List[float] = field(default_factory=list)
     ref_y: List[float] = field(default_factory=list)
     odom_x: List[float] = field(default_factory=list)
     odom_y: List[float] = field(default_factory=list)
     ekf_x: List[float] = field(default_factory=list)
     ekf_y: List[float] = field(default_factory=list)
 
-    # aliases used by sim HUD (GT == ref)
     @property
     def gt_x(self) -> List[float]:
         return self.ref_x
@@ -206,8 +179,8 @@ class TrajectoryBuffers:
         self.ekf_y.clear()
 
 
-class OnlineLocalizer:
-    """Streaming bicycle odometry + EKF via C++ ``pyadas.OnlineLocalizer``."""
+class OnlineVehicleEkf:
+    """MetaDrive helper: GT pose as GPS over Simulated ``AdasApp``."""
 
     def __init__(
         self,
@@ -217,21 +190,24 @@ class OnlineLocalizer:
         gps_update_interval: float = 0.2,
         gps_meas_noise: float = 0.0,
         imu_every_step: bool = True,
+        app=None,
+        **_ignored,
     ):
-        cpp = require_cpp()
+        _ = imu_every_step
         self.wheelbase = float(wheelbase)
-        self.gps_update_interval = float(gps_update_interval)
         self.gps_meas_noise = float(gps_meas_noise)
-        self.imu_every_step = bool(imu_every_step)
-        self._loc = cpp.OnlineLocalizer(
-            float(wheelbase),
-            float(gps_noise_pos),
-            float(gps_update_interval),
-            bool(imu_every_step),
+        self._owns_app = app is None
+        self._app = app or pyadas.AdasApp(
+            wheelbase=float(wheelbase),
+            gps_noise_pos=float(gps_noise_pos),
+            gps_update_interval=float(gps_update_interval),
         )
         self.buffers = TrajectoryBuffers()
-        self.ekf: Optional[VehicleEKF] = None
         self._initialized = False
+        self._t_us = 0
+        self._x = 0.0
+        self._y = 0.0
+        self._yaw = 0.0
 
     def reset(
         self,
@@ -241,18 +217,11 @@ class OnlineLocalizer:
         v: float = 0.0,
         yaw_rate: float = 0.0,
     ) -> None:
-        self._loc.reset(float(x), float(y), float(yaw), float(v), float(yaw_rate))
-        self.ekf = VehicleEKF(
-            initial_x=float(x),
-            initial_y=float(y),
-            initial_yaw=float(yaw),
-            initial_v=float(v),
-            initial_yaw_rate=float(yaw_rate),
-            wheelbase=self.wheelbase,
-        )
-        self._initialized = True
+        self._app.reset_localization(float(x), float(y), float(yaw), float(v), float(yaw_rate))
         self.buffers.clear()
         self._record(float(x), float(y), float(x), float(y), float(x), float(y))
+        self._x, self._y, self._yaw = float(x), float(y), float(yaw)
+        self._initialized = True
 
     def _record(
         self,
@@ -271,77 +240,18 @@ class OnlineLocalizer:
         self.buffers.ekf_y.append(ekf_y)
 
     @property
-    def position(self) -> Tuple[float, float]:
-        return float(self._loc.x), float(self._loc.y)
+    def x(self) -> float:
+        return self._x
+
+    @property
+    def y(self) -> float:
+        return self._y
 
     @property
     def yaw(self) -> float:
-        return float(self._loc.yaw)
+        return self._yaw
 
     def step(
-        self,
-        *,
-        dt: float,
-        speed_mps: float,
-        steer_rad: float,
-        yaw_rate: Optional[float] = None,
-        gps_xy: Optional[Tuple[float, float]] = None,
-        ref_xy: Optional[Tuple[float, float]] = None,
-    ) -> Tuple[float, float, float]:
-        if not self._initialized:
-            rx, ry = ref_xy if ref_xy is not None else (gps_xy or (0.0, 0.0))
-            self.reset(rx, ry, 0.0, v=speed_mps, yaw_rate=yaw_rate or 0.0)
-
-        gps_arg = None
-        if gps_xy is not None:
-            gx, gy = float(gps_xy[0]), float(gps_xy[1])
-            if self.gps_meas_noise > 0:
-                gx += float(np.random.normal(0.0, self.gps_meas_noise))
-                gy += float(np.random.normal(0.0, self.gps_meas_noise))
-            gps_arg = (gx, gy)
-
-        ex, ey, eyaw = self._loc.step(
-            float(dt),
-            float(speed_mps),
-            float(steer_rad),
-            None if yaw_rate is None else float(yaw_rate),
-            gps_arg,
-            ref_xy,
-        )
-        # Sync shim EKF pose for callers that read loc.ekf
-        if self.ekf is not None:
-            self.ekf.reset(ex, ey, eyaw, speed_mps, yaw_rate or 0.0)
-
-        ox = list(self._loc.odom_x)
-        oy = list(self._loc.odom_y)
-        odom_x = float(ox[-1]) if ox else ex
-        odom_y = float(oy[-1]) if oy else ey
-        if ref_xy is not None:
-            rx, ry = float(ref_xy[0]), float(ref_xy[1])
-        elif gps_xy is not None:
-            rx, ry = float(gps_xy[0]), float(gps_xy[1])
-        else:
-            rx, ry = float(ex), float(ey)
-        self._record(rx, ry, odom_x, odom_y, float(ex), float(ey))
-        return float(ex), float(ey), float(eyaw)
-
-    def position_errors(self) -> Tuple[float, float]:
-        b = self.buffers
-        if len(b.ref_x) < 2:
-            return float("nan"), float("nan")
-        ref = np.stack([b.ref_x, b.ref_y], axis=1)
-        ekf = np.stack([b.ekf_x, b.ekf_y], axis=1)
-        odom = np.stack([b.odom_x, b.odom_y], axis=1)
-        e_ekf = float(np.sqrt(np.mean(np.sum((ekf - ref) ** 2, axis=1))))
-        e_odom = float(np.sqrt(np.mean(np.sum((odom - ref) ** 2, axis=1))))
-        return e_ekf, e_odom
-
-
-# Back-compat alias used by sim
-class OnlineVehicleEkf(OnlineLocalizer):
-    """MetaDrive helper: treat GT pose as GPS + reference track."""
-
-    def step(  # type: ignore[override]
         self,
         *,
         gt_x: float,
@@ -359,15 +269,44 @@ class OnlineVehicleEkf(OnlineLocalizer):
             dy = gt_y - self.buffers.ref_y[-1]
             if dx * dx + dy * dy > 25.0:
                 self.reset(gt_x, gt_y, gt_yaw, v=speed_mps, yaw_rate=yaw_rate)
-        OnlineLocalizer.step(
-            self,
-            dt=dt,
-            speed_mps=speed_mps,
-            steer_rad=steer_rad,
-            yaw_rate=yaw_rate,
-            gps_xy=(gt_x, gt_y),
-            ref_xy=(gt_x, gt_y),
+
+        gps_x, gps_y = float(gt_x), float(gt_y)
+        if self.gps_meas_noise > 0:
+            gps_x += float(np.random.normal(0.0, self.gps_meas_noise))
+            gps_y += float(np.random.normal(0.0, self.gps_meas_noise))
+
+        self._t_us += max(1, int(round(float(dt) * 1e6)))
+        self._app.publish_gps(self._t_us, gps_x, gps_y)
+        self._app.publish_imu(self._t_us, float(yaw_rate))
+        self._app.publish_chassis(self._t_us, float(speed_mps), float(steer_rad), float(yaw_rate))
+        self._app.step(self._t_us)
+
+        pose = None
+        for msg in self._app.pop_messages():
+            if isinstance(msg, pyadas.LocalizationPose):
+                pose = msg
+        if pose is None:
+            return
+        self._x, self._y, self._yaw = float(pose.x), float(pose.y), float(pose.yaw)
+        self._record(
+            float(gt_x),
+            float(gt_y),
+            float(pose.odom_x),
+            float(pose.odom_y),
+            float(pose.ekf_x),
+            float(pose.ekf_y),
         )
+
+    def position_errors(self) -> Tuple[float, float]:
+        b = self.buffers
+        if len(b.ref_x) < 2:
+            return float("nan"), float("nan")
+        ref = np.stack([b.ref_x, b.ref_y], axis=1)
+        ekf = np.stack([b.ekf_x, b.ekf_y], axis=1)
+        odom = np.stack([b.odom_x, b.odom_y], axis=1)
+        e_ekf = float(np.sqrt(np.mean(np.sum((ekf - ref) ** 2, axis=1))))
+        e_odom = float(np.sqrt(np.mean(np.sum((odom - ref) ** 2, axis=1))))
+        return e_ekf, e_odom
 
 
 def draw_trajectory_panel(

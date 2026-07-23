@@ -2,39 +2,42 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace adas {
 namespace {
 
-std::vector<Vec2> circleLineSegmentIntersection(Vec2 center, double radius, Vec2 pt1, Vec2 pt2, bool full_line)
+std::vector<Vec2> circleLineSegmentIntersection(const Vec2& center, double radius, const Vec2& pt1, const Vec2& pt2,
+                                                bool full_line)
 {
-  const double p1x = pt1.x, p1y = pt1.y, p2x = pt2.x, p2y = pt2.y;
-  const double cx = center.x, cy = center.y;
-  const double x1 = p1x - cx, y1 = p1y - cy;
-  const double x2 = p2x - cx, y2 = p2y - cy;
-  const double dx = x2 - x1, dy = y2 - y1;
-  const double dr = std::sqrt(dx * dx + dy * dy);
+  const Vec2 p1 = pt1 - center;
+  const Vec2 p2 = pt2 - center;
+  const Vec2 d = p2 - p1;
+  const double dr = d.norm();
   if (dr < 1e-12)
     return {};
-  const double big_d = x1 * y2 - x2 * y1;
+
+  const double big_d = p1.x() * p2.y() - p2.x() * p1.y();
   const double discriminant = radius * radius * dr * dr - big_d * big_d;
   if (discriminant < 0)
     return {};
 
   std::vector<Vec2> intersections;
+  const double dy = d.y();
+  const double dx = d.x();
   const int dy_sign = (dy < 0) ? -1 : 1;
-  const int signs[2] = {(dy < 0) ? 1 : -1, (dy < 0) ? -1 : 1};
-  for (int s = 0; s < 2; ++s) {
-    const int sign = signs[s];
-    const double xi = cx + (big_d * dy + sign * dy_sign * dx * std::sqrt(discriminant)) / (dr * dr);
-    const double yi = cy + (-big_d * dx + sign * std::abs(dy) * std::sqrt(discriminant)) / (dr * dr);
-    intersections.push_back({xi, yi});
+  const double sqrt_disc = std::sqrt(discriminant);
+  for (int sign : ((dy < 0) ? std::vector<int>{1, -1} : std::vector<int>{-1, 1})) {
+    const Vec2 local((big_d * dy + sign * dy_sign * dx * sqrt_disc) / (dr * dr),
+                     (-big_d * dx + sign * std::abs(dy) * sqrt_disc) / (dr * dr));
+    intersections.push_back(center + local);
   }
 
   if (!full_line) {
     std::vector<Vec2> filtered;
     for (const auto& pt : intersections) {
-      const double frac = (std::abs(dx) > std::abs(dy)) ? (pt.x - p1x) / dx : (pt.y - p1y) / dy;
+      const Vec2 delta = pt - pt1;
+      const double frac = (std::abs(dx) > std::abs(dy)) ? delta.x() / dx : delta.y() / dy;
       if (frac >= 0.0 && frac <= 1.0)
         filtered.push_back(pt);
     }
@@ -61,11 +64,11 @@ std::optional<Vec2> getTargetPoint(double lookahead, const std::vector<Vec2>& po
     return std::nullopt;
   std::vector<Vec2> intersections;
   for (size_t j = 0; j + 1 < polyline.size(); ++j) {
-    auto hits = circleLineSegmentIntersection({0.0, 0.0}, lookahead, polyline[j], polyline[j + 1], false);
+    auto hits = circleLineSegmentIntersection(Vec2::Zero(), lookahead, polyline[j], polyline[j + 1], false);
     intersections.insert(intersections.end(), hits.begin(), hits.end());
   }
   for (const auto& p : intersections) {
-    if (p.x > 0.0)
+    if (p.x() > 0.0)
       return p;
   }
   return std::nullopt;
@@ -80,13 +83,13 @@ PurePursuitResult PurePursuit::compute(const std::vector<Vec2>& polyline_ego, do
 
   std::vector<Vec2> poly_ra = polyline_ego;
   for (auto& p : poly_ra)
-    p.x += waypoint_shift;
+    p.x() += waypoint_shift;
 
   out.target_ra = getTargetPoint(out.lookahead_m, poly_ra);
   if (out.target_ra) {
-    out.alpha_rad = std::atan2(out.target_ra->y, out.target_ra->x);
+    out.alpha_rad = std::atan2(out.target_ra->y(), out.target_ra->x());
     out.steer_rad = std::atan((2.0 * wheel_base * std::sin(out.alpha_rad)) / std::max(out.lookahead_m, 1e-3));
-    out.target_ego = Vec2{out.target_ra->x - waypoint_shift, out.target_ra->y};
+    out.target_ego = Vec2(out.target_ra->x() - waypoint_shift, out.target_ra->y());
   }
   return out;
 }

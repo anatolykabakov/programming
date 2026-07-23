@@ -1,42 +1,82 @@
 package ai.flow.adas;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
-import android.view.TextureView;
-import android.widget.ImageButton;
-import android.widget.Toast;
 import android.util.Log;
+import android.view.TextureView;
+import android.view.View;
+import android.widget.ImageButton;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.File;
 
+import ai.flow.adas.Messages.ZMQMessage;
 import ai.flow.adas.vision.LaneOverlayView;
 import ai.flow.adas.vision.VisionPipeline;
 
 public class MainActivity extends AppCompatActivity {
     public static final String LOG_TAG = "MainActivity";
     private static final int REQ_PERMISSIONS = 1;
+    private static final long CAN_ONLINE_TIMEOUT_MS = 500;
 
-    private ImageButton loggingToggleButton = null;
-    private boolean loggingActive = false;
-    private TextureView mImageView = null;
+    private ImageButton loggingToggleButton;
+    private ImageButton paramsToggleButton;
+    private View canOnlineLed;
+    private TextView canOnlineText;
+    private ScrollView paramsPanel;
+    private TextureView mImageView;
+    private LaneOverlayView laneOverlay;
 
-    CameraHandler cameraHandler = null;
-    GPSHandler gpsHandler = null;
-    IMUHandler imuHandler = null;
-    VisionPipeline visionPipeline = null;
-    LaneOverlayView laneOverlay = null;
+    private CameraHandler cameraHandler;
+    private GPSHandler gpsHandler;
+    private IMUHandler imuHandler;
+    private VisionPipeline visionPipeline;
 
-    private boolean cameraStarted = false;
-    private boolean storagePromptShown = false;
+    private boolean cameraStarted;
+    private boolean storagePromptShown;
+    private boolean paramsOpen;
+
+    private RuntimeParams params = new RuntimeParams();
+    private ParamSlider rollSlider;
+    private ParamSlider pitchSlider;
+    private ParamSlider yawSlider;
+    private ParamSlider heightSlider;
+    private ParamSlider camXSlider;
+    private ParamSlider camYSlider;
+    private ParamSlider ppKddSlider;
+    private ParamSlider ppLdMinSlider;
+    private ParamSlider ppLdMaxSlider;
+    private ParamSlider wheelbaseSlider;
+    private ParamSlider ppShiftSlider;
+    private ParamSlider steerRatioSlider;
+
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable canStatusTick = new Runnable() {
+        @Override
+        public void run() {
+            updateCanOnlineUi();
+            uiHandler.postDelayed(this, 200);
+        }
+    };
+
+    private final ZMQBridgeService.OutboundListener outboundListener =
+            (topic, message) -> uiHandler.post(() -> onOutboundMessage(topic, message));
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
@@ -45,106 +85,74 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         loggingToggleButton = findViewById(R.id.loggingToggleButton);
+        paramsToggleButton = findViewById(R.id.paramsToggleButton);
+        canOnlineLed = findViewById(R.id.canOnlineLed);
+        canOnlineText = findViewById(R.id.canOnlineText);
+        paramsPanel = findViewById(R.id.paramsPanel);
         mImageView = findViewById(R.id.textureView);
         laneOverlay = findViewById(R.id.laneOverlay);
 
         cameraHandler = new CameraHandler(getApplication().getApplicationContext(), mImageView);
+        cameraHandler.setFailureListener(reason -> uiHandler.post(() -> {
+            stopCamera();
+            if (laneOverlay != null) {
+                laneOverlay.setHcaStatus("Camera dead: " + reason);
+            }
+            Toast.makeText(MainActivity.this, "Camera failed: " + reason, Toast.LENGTH_LONG).show();
+        }));
         gpsHandler = new GPSHandler(this);
         imuHandler = new IMUHandler(this);
-
-        AdasConfig config = AdasConfig.load(this);
-        laneOverlay.setIntrinsics(
-                config.fx, config.fy, config.cx, config.cy,
-                cameraHandler.W > 0 ? cameraHandler.W : config.frameW,
-                cameraHandler.H > 0 ? cameraHandler.H : config.frameH);
-        laneOverlay.setExtrinsics(
-                config.camX, config.camY, config.camZ,
-                config.rollDeg, config.pitchDeg, config.yawDeg);
-        laneOverlay.setSteerRatio(config.steerRatio);
-
-        // PP / steer / live calib HUD from native via ZMQ OUT
-        ZMQBridgeService.setOutboundListener((topic, msg) -> {
-            if (laneOverlay == null) {
-                return;
-            }
-            if (msg.hasLaneKeep()) {
-                LaneKeepOuter.LaneKeepState lk = msg.getLaneKeep();
-                laneOverlay.setLaneKeep(
-                        lk.getHasTarget(),
-                        (float) lk.getTargetX(),
-                        (float) lk.getTargetY(),
-                        (float) lk.getLookaheadM(),
-                        (float) lk.getCurvature(),
-                        (float) lk.getSteerRad(),
-                        lk.getStatus());
-            }
-            if (msg.hasSteerCommand()) {
-                SteerOuter.SteerCommand sc = msg.getSteerCommand();
-                laneOverlay.setSteerCommand(sc.getTorqueCnm(), sc.getEnabled());
-            }
-            if (msg.hasCameraCalib()) {
-                CameraCalibOuter.CameraCalibrationState c = msg.getCameraCalib();
-                laneOverlay.setCameraCalib(
-                        (float) c.getPitchDeg(),
-                        (float) c.getYawDeg(),
-                        (float) c.getCameraHeightM(),
-                        c.getCalibrationSuccess(),
-                        c.getCalPercent() > 0 ? c.getCalPercent()
-                                : Math.min(100, c.getNUpdates() * 20));
-            }
-            if (msg.hasPandaHealth()) {
-                laneOverlay.setControlsAllowed(msg.getPandaHealth().getControlsAllowed());
-            }
-        });
-
-        // ONNX first: with Panda plugged in, AdasAppHandler immediately starts native
-        // (USB fd + panda + protobuf) and concurrent createSession OOMs / fails.
-        if (config.visionSupercombo) {
-            try {
-                visionPipeline = new VisionPipeline(this, laneOverlay, config.cameraCalib);
-                cameraHandler.setVisionPipeline(visionPipeline);
-                cameraHandler.setLaneOverlay(laneOverlay);
-                Log.i(LOG_TAG, "VisionPipeline ready (supercombo ONNX, posePub="
-                        + config.cameraCalib + ")");
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "VisionPipeline init failed", e);
-                String detail = e.getClass().getSimpleName() + ": " + e.getMessage();
-                if (e.getCause() != null) {
-                    detail += " | cause=" + e.getCause().getMessage();
-                }
-                Toast.makeText(this, "ONNX init failed: " + detail, Toast.LENGTH_LONG).show();
-            }
-        } else {
-            Log.i(LOG_TAG, "vision_supercombo disabled in assets/config.json");
-        }
-
-        // Panda / ZMQ after model is in memory
         startService(new Intent(getApplicationContext(), AdasAppHandler.class));
 
+        params = RuntimeParams.load(this);
+        setupParamsPanel();
+        applyParamsToOverlay();
+        AdasAppHandler.applyLaneKeepParams(params);
+
+        if (AdasConfig.visionSupercomboEnabled(this)) {
+            try {
+                visionPipeline = new VisionPipeline(this, laneOverlay);
+                cameraHandler.setVisionPipeline(visionPipeline);
+                applyParamsToVision();
+                Log.i(LOG_TAG, "VisionPipeline ready (supercombo ONNX + calib warp)");
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "VisionPipeline init failed", e);
+                Toast.makeText(this, "ONNX init failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.i(LOG_TAG, "vision_supercombo disabled in config — skipping ONNX");
+        }
+
         mImageView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-            @Override public void onSurfaceTextureAvailable(android.graphics.SurfaceTexture surface, int w, int h) {
+            @Override
+            public void onSurfaceTextureAvailable(android.graphics.SurfaceTexture surface, int w, int h) {
                 Log.i(LOG_TAG, "TextureView available " + w + "x" + h);
                 startCameraIfNeeded(w, h);
             }
-            @Override public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture surface, int w, int h) {
+
+            @Override
+            public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture surface, int w, int h) {
                 cameraHandler.configurePreviewTransform(w, h);
             }
-            @Override public boolean onSurfaceTextureDestroyed(android.graphics.SurfaceTexture surface) {
+
+            @Override
+            public boolean onSurfaceTextureDestroyed(android.graphics.SurfaceTexture surface) {
                 Log.i(LOG_TAG, "TextureView destroyed — releasing camera");
                 stopCamera();
                 return true;
             }
-            @Override public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture surface) {}
+
+            @Override
+            public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture surface) {}
         });
 
         requestRuntimePermissionsIfNeeded();
-        updateLoggingButtonUi();
+        updateLoggingButtonUi(Logger.getInstance().isRunning());
 
         loggingToggleButton.setOnClickListener(v -> {
-            if (loggingActive) {
+            if (Logger.getInstance().isRunning()) {
                 Logger.getInstance().stop();
-                loggingActive = false;
-                updateLoggingButtonUi();
+                updateLoggingButtonUi(false);
                 Toast.makeText(MainActivity.this, "Logging stopped", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -158,28 +166,241 @@ public class MainActivity extends AppCompatActivity {
             if (cameraHandler != null) {
                 cameraHandler.ensureBagIntrinsicsLogged();
             }
-            loggingActive = true;
-            updateLoggingButtonUi();
+            updateLoggingButtonUi(true);
             Toast.makeText(MainActivity.this, "Logging started", Toast.LENGTH_SHORT).show();
+        });
+
+        paramsToggleButton.setOnClickListener(v -> setParamsOpen(!paramsOpen));
+        findViewById(R.id.paramsResetButton).setOnClickListener(v -> {
+            params = RuntimeParams.load(this);
+            // Prefer asset defaults: delete filesDir override then reload assets
+            File cfg = RuntimeParams.configFile(this);
+            if (cfg.exists()) {
+                // reload from asset by temporarily ignoring filesDir — load already prefers filesDir.
+                // Force asset read:
+                try {
+                    if (cfg.delete()) {
+                        params = RuntimeParams.load(this);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            bindSlidersFromParams();
+            applyParamsToOverlay();
+            applyParamsToVision();
+            AdasAppHandler.applyLaneKeepParams(params);
+            Toast.makeText(this, "Params reset from assets", Toast.LENGTH_SHORT).show();
+        });
+        findViewById(R.id.paramsSaveButton).setOnClickListener(v -> {
+            readSlidersIntoParams();
+            try {
+                params.save(this);
+                applyParamsToOverlay();
+                applyParamsToVision();
+                AdasAppHandler.applyLaneKeepParams(params);
+                Toast.makeText(this, "Saved (C++ PP updated if native running)", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "save params failed", e);
+                Toast.makeText(this, "Save failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
         });
     }
 
-    private void updateLoggingButtonUi() {
+    private void setupParamsPanel() {
+        rollSlider = new ParamSlider(findViewById(R.id.rowRoll), "Roll", "°", -15f, 15f, 1);
+        pitchSlider = new ParamSlider(findViewById(R.id.rowPitch), "Pitch", "°", -20f, 10f, 1);
+        yawSlider = new ParamSlider(findViewById(R.id.rowYaw), "Yaw", "°", -20f, 20f, 1);
+        heightSlider = new ParamSlider(findViewById(R.id.rowHeight), "Height", "m", 0.40f, 2.20f, 2);
+        camXSlider = new ParamSlider(findViewById(R.id.rowCamX), "X", "m", 0f, 3f, 2);
+        camYSlider = new ParamSlider(findViewById(R.id.rowCamY), "Y", "m", -1f, 1f, 2);
+        ppKddSlider = new ParamSlider(findViewById(R.id.rowPpKdd), "K_dd", "", 0.05f, 1.5f, 2);
+        ppLdMinSlider = new ParamSlider(findViewById(R.id.rowPpLdMin), "Ld min", "m", 1f, 30f, 1);
+        ppLdMaxSlider = new ParamSlider(findViewById(R.id.rowPpLdMax), "Ld max", "m", 1f, 40f, 1);
+        wheelbaseSlider = new ParamSlider(findViewById(R.id.rowWheelbase), "Wheelbase", "m", 2.0f, 3.2f, 3);
+        ppShiftSlider = new ParamSlider(findViewById(R.id.rowPpShift), "Shift", "m", 0f, 3f, 2);
+        steerRatioSlider = new ParamSlider(findViewById(R.id.rowSteerRatio), "Steer ratio", "", 8f, 25f, 1);
+
+        ParamSlider.Listener liveOverlay = v -> {
+            readSlidersIntoParams();
+            applyParamsToOverlay();
+        };
+        ParamSlider.Listener liveWarp = v -> {
+            readSlidersIntoParams();
+            applyParamsToOverlay();
+            applyParamsToVision();
+        };
+        ParamSlider.Listener livePp = v -> {
+            readSlidersIntoParams();
+            applyParamsToOverlay();
+            AdasAppHandler.applyLaneKeepParams(params);
+        };
+        rollSlider.setListener(liveWarp);
+        pitchSlider.setListener(liveWarp);
+        yawSlider.setListener(liveWarp);
+        heightSlider.setListener(liveOverlay);
+        ppShiftSlider.setListener(livePp);
+        ppKddSlider.setListener(livePp);
+        ppLdMinSlider.setListener(livePp);
+        ppLdMaxSlider.setListener(livePp);
+        steerRatioSlider.setListener(livePp);
+
+        bindSlidersFromParams();
+    }
+
+    private void bindSlidersFromParams() {
+        rollSlider.setValue(params.rollDeg);
+        pitchSlider.setValue(params.pitchDeg);
+        yawSlider.setValue(params.yawDeg);
+        heightSlider.setValue(params.heightM);
+        camXSlider.setValue(params.camX);
+        camYSlider.setValue(params.camY);
+        ppKddSlider.setValue(params.ppKdd);
+        ppLdMinSlider.setValue(params.ppLdMin);
+        ppLdMaxSlider.setValue(params.ppLdMax);
+        wheelbaseSlider.setValue(params.wheelbaseM);
+        ppShiftSlider.setValue(params.ppShift);
+        steerRatioSlider.setValue(params.steerRatio);
+    }
+
+    private void readSlidersIntoParams() {
+        params.rollDeg = rollSlider.getValue();
+        params.pitchDeg = pitchSlider.getValue();
+        params.yawDeg = yawSlider.getValue();
+        params.heightM = heightSlider.getValue();
+        params.camX = camXSlider.getValue();
+        params.camY = camYSlider.getValue();
+        params.ppKdd = ppKddSlider.getValue();
+        params.ppLdMin = ppLdMinSlider.getValue();
+        params.ppLdMax = ppLdMaxSlider.getValue();
+        if (params.ppLdMin > params.ppLdMax) {
+            float t = params.ppLdMin;
+            params.ppLdMin = params.ppLdMax;
+            params.ppLdMax = t;
+            ppLdMinSlider.setValue(params.ppLdMin);
+            ppLdMaxSlider.setValue(params.ppLdMax);
+        }
+        params.wheelbaseM = wheelbaseSlider.getValue();
+        params.ppShift = ppShiftSlider.getValue();
+        params.steerRatio = steerRatioSlider.getValue();
+    }
+
+    private void applyParamsToOverlay() {
+        if (laneOverlay == null) {
+            return;
+        }
+        laneOverlay.setCameraHeight(params.heightM);
+        laneOverlay.setWaypointShift(params.ppShift);
+        laneOverlay.setSteerRatio(params.steerRatio);
+        laneOverlay.setCalibRpyDeg(params.rollDeg, params.pitchDeg, params.yawDeg);
+        int w = cameraHandler != null ? cameraHandler.W : params.calibWidth;
+        int h = cameraHandler != null ? cameraHandler.H : params.calibHeight;
+        int calibW = Math.max(1, params.calibWidth);
+        int calibH = Math.max(1, params.calibHeight);
+        float sx = w / (float) calibW;
+        float sy = h / (float) calibH;
+        laneOverlay.setIntrinsics(
+                params.fx * sx, params.fy * sy, params.cx * sx, params.cy * sy, w, h);
+    }
+
+    /** Push RPY + K into model preprocess warp (flowpilot getWrapMatrix). */
+    private void applyParamsToVision() {
+        if (visionPipeline == null) {
+            return;
+        }
+        visionPipeline.setCalib(
+                params.rollDeg, params.pitchDeg, params.yawDeg,
+                params.fx, params.fy, params.cx, params.cy,
+                params.calibWidth, params.calibHeight);
+    }
+
+    private void setParamsOpen(boolean open) {
+        paramsOpen = open;
+        paramsPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+        if (open) {
+            bindSlidersFromParams();
+        }
+    }
+
+    private void updateCanOnlineUi() {
+        long last = ZMQBridgeService.lastPandaHealthElapsedMs();
+        boolean online = last > 0 && (SystemClock.elapsedRealtime() - last) <= CAN_ONLINE_TIMEOUT_MS;
+        canOnlineLed.setBackgroundResource(online ? R.drawable.bg_status_led_on : R.drawable.bg_status_led_off);
+        canOnlineText.setText(online ? R.string.can_online : R.string.can_offline);
+        canOnlineText.setTextColor(online ? 0xFF2ECC71 : 0x80FFFFFF);
+    }
+
+    private void onOutboundMessage(String topic, ZMQMessage message) {
+        if (laneOverlay == null || message == null) {
+            return;
+        }
+        if (message.hasLaneKeep()) {
+            LaneKeepOuter.LaneKeepState lk = message.getLaneKeep();
+            laneOverlay.setLaneKeep(
+                    lk.getHasTarget(),
+                    (float) lk.getTargetX(),
+                    (float) lk.getTargetY(),
+                    (float) lk.getLookaheadM(),
+                    (float) lk.getCurvature(),
+                    (float) lk.getSteerRad(),
+                    lk.getStatus());
+        }
+        if (message.hasSteerCommand()) {
+            SteerOuter.SteerCommand cmd = message.getSteerCommand();
+            laneOverlay.setSteerCommand(cmd.getTorqueCnm(), cmd.getEnabled());
+        }
+        if (message.hasPandaHealth()) {
+            Panda.PandaHealth h = message.getPandaHealth();
+            boolean ign = h.getIgnitionLine() || h.getIgnitionCan();
+            String status;
+            if (!ign) {
+                status = "HCA blocked: no ignition";
+            } else if (!h.getControlsAllowed()) {
+                status = "HCA blocked: controls_allowed=0 (engage stock ACC)";
+            } else if (h.getHeartbeatLost()) {
+                status = "HCA warn: panda heartbeat lost";
+            } else {
+                status = String.format("HCA ok (safety=%d)", h.getSafetyMode());
+            }
+            laneOverlay.setHcaStatus(status);
+        }
+        if (message.hasCameraCalib()) {
+            CameraCalibOuter.CameraCalibrationState c = message.getCameraCalib();
+            // Only push live calib into warp when VP/pose calib is confident.
+            if (c.getCalibrationSuccess() || c.getCalPercent() >= 50) {
+                params.rollDeg = (float) c.getRollDeg();
+                params.pitchDeg = (float) c.getPitchDeg();
+                params.yawDeg = (float) c.getYawDeg();
+                if (c.getCameraHeightM() > 0.2) {
+                    params.heightM = (float) c.getCameraHeightM();
+                }
+                if (c.getFx() > 1) {
+                    params.fx = (float) c.getFx();
+                    params.fy = (float) c.getFy();
+                    params.cx = (float) c.getCx();
+                    params.cy = (float) c.getCy();
+                }
+                applyParamsToOverlay();
+                applyParamsToVision();
+                if (paramsOpen) {
+                    bindSlidersFromParams();
+                }
+            }
+        }
+    }
+
+    private void updateLoggingButtonUi(boolean logging) {
         if (loggingToggleButton == null) {
             return;
         }
-        if (loggingActive) {
-            loggingToggleButton.setBackgroundResource(R.drawable.bg_log_fab_recording);
-            loggingToggleButton.setImageResource(R.drawable.ic_log_stop);
-        } else {
-            loggingToggleButton.setBackgroundResource(R.drawable.bg_log_fab);
-            loggingToggleButton.setImageResource(R.drawable.ic_log_rec);
-        }
+        loggingToggleButton.setImageResource(logging ? R.drawable.ic_log_stop : R.drawable.ic_log_rec);
+        loggingToggleButton.setSelected(logging);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        ZMQBridgeService.addOutboundListener(outboundListener);
+        uiHandler.post(canStatusTick);
         if (gpsHandler != null) {
             gpsHandler.start();
         }
@@ -193,18 +414,30 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
-        // Keep camera while briefly covered only if surface stays; surface destroy handles full release.
+        uiHandler.removeCallbacks(canStatusTick);
+        ZMQBridgeService.removeOutboundListener(outboundListener);
+        stopCamera();
+        if (gpsHandler != null) {
+            gpsHandler.stop();
+        }
+        if (imuHandler != null) {
+            imuHandler.stop();
+        }
         super.onPause();
     }
 
     private void requestRuntimePermissionsIfNeeded() {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                || ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED
                 || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    && ContextCompat.checkSelfPermission(this, Manifest.permission.HIGH_SAMPLING_RATE_SENSORS)
-                        != PackageManager.PERMISSION_GRANTED)) {
+                        && ContextCompat.checkSelfPermission(
+                                        this, Manifest.permission.HIGH_SAMPLING_RATE_SENSORS)
+                                != PackageManager.PERMISSION_GRANTED)) {
             java.util.ArrayList<String> perms = new java.util.ArrayList<>();
             perms.add(Manifest.permission.CAMERA);
             perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
@@ -217,7 +450,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Do not open Settings from onCreate — it pauses the activity and aborts camera open. */
     private void maybePromptStorageAccess() {
         if (storagePromptShown) {
             return;
@@ -226,8 +458,7 @@ public class MainActivity extends AppCompatActivity {
             storagePromptShown = true;
             Toast.makeText(this, "Grant All files access for bag logging", Toast.LENGTH_LONG).show();
             try {
-                Intent getpermission = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-                startActivity(getpermission);
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
             } catch (Exception e) {
                 Log.e(LOG_TAG, "Cannot open storage settings", e);
             }
@@ -235,7 +466,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(
+            int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != REQ_PERMISSIONS) {
             return;
@@ -262,8 +494,7 @@ public class MainActivity extends AppCompatActivity {
         if (w > 0 && h > 0) {
             cameraHandler.configurePreviewTransform(w, h);
         }
-        if (cameraHandler.isCameraOpen()) {
-            cameraStarted = true;
+        if (cameraStarted && cameraHandler.isCameraOpen()) {
             return;
         }
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -274,11 +505,14 @@ public class MainActivity extends AppCompatActivity {
             Log.w(LOG_TAG, "TextureView surface not available yet");
             return;
         }
+        if (cameraStarted && !cameraHandler.isCameraOpen()) {
+            Log.w(LOG_TAG, "Camera marked started but not open — restarting");
+            cameraHandler.stop();
+            cameraStarted = false;
+        }
         Log.i(LOG_TAG, "Starting camera preview " + w + "x" + h);
-        cameraStarted = false;
         cameraHandler.start();
-        // cameraStarted set true from onResume retry once CameraHandler.isCameraOpen()
-        cameraStarted = true; // prevent duplicate openCamera while callback pending
+        cameraStarted = true;
     }
 
     private void stopCamera() {
@@ -291,11 +525,21 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        ZMQBridgeService.setOutboundListener(null);
-        if (visionPipeline != null) visionPipeline.close();
-        stopCamera();
-        if (gpsHandler != null) gpsHandler.stop();
-        if (imuHandler != null) imuHandler.stop();
+        uiHandler.removeCallbacks(canStatusTick);
+        ZMQBridgeService.removeOutboundListener(outboundListener);
+        if (visionPipeline != null) {
+            visionPipeline.close();
+        }
+        if (cameraHandler != null) {
+            cameraHandler.release();
+            cameraStarted = false;
+        }
+        if (gpsHandler != null) {
+            gpsHandler.stop();
+        }
+        if (imuHandler != null) {
+            imuHandler.stop();
+        }
         stopService(new Intent(getApplicationContext(), AdasAppHandler.class));
         Log.i(LOG_TAG, "All services stopped in onDestroy");
     }

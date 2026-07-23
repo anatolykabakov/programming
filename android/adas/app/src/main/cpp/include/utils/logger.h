@@ -1,6 +1,5 @@
 #pragma once
 
-// Platform-specific logging macros
 #if defined(BUILD_FOR_ANDROID) || defined(__ANDROID__)
 #include <android/log.h>
 
@@ -12,7 +11,7 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__)
 
-#else  // host / non-Android
+#else
 #include <cstdio>
 
 #define LOG_TAG "AdasApp"

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Parse openpilot supercombo.onnx output (shape 1×6409).
+"""Parse supercombo.onnx output (shape 1×6409).
 
-Layout matches openpilot ~v0.8.x ``driving.cc`` + the demo's slice starts
+Layout matches driving-model ``driving.cc`` + the demo's slice starts
 (plan ends at 4955). Important: values are **not** plain image polylines.
 
 Coordinates are in the **ego / calibrated frame**:
   X forward (m), Y **right** (m) for this ONNX (matches Android overlay
-  ``u = cx + fx·Y/X``), Z up (m), sampled at openpilot ``X_IDXS`` (0…192 m).
+  ``u = cx + fx·Y/X``), Z up (m), sampled at ``X_IDXS`` (0…192 m).
 
-  Note: classic openpilot ISO docs say Y-left; this build’s lane means have
+  Note: classic ISO docs say Y-left; this build’s lane means have
   leftNear with **negative** Y — treat as Y-right when projecting.
 
 ================================================================================
@@ -197,5 +197,8 @@ def parse_supercombo(out: np.ndarray) -> SupercomboOut:
     return SupercomboOut(plan=plan, lanes=lanes, edges=edges)
 
 
-def explain_output() -> str:
-    return __doc__ or ""
+def explain_output(out: SupercomboOut) -> str:
+    lines = [f"plan hyp#{out.plan.hyp_index} logit={out.plan.logit:.3f}"]
+    for lane in out.lanes:
+        lines.append(f"  {lane.name}: y0={lane.y[0]:+.3f} prob={lane.prob:.3f}")
+    return "\n".join(lines)

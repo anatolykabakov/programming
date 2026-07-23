@@ -197,7 +197,7 @@ def compare_to_gt(
         gt_lanes.get("right_road"),
     )
     lk_gt: Optional[LaneKeepResult] = None
-    if gt_poly is not None and controller.mode in ("pure_pursuit", "lateral_pd"):
+    if gt_poly is not None and controller.mode == "pure_pursuit":
         lk_gt = controller.compute_from_polyline(speed_mps, gt_poly)
 
     ctrl_poly = ctrl_lk.polyline if ctrl_lk is not None else None

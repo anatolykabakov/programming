@@ -6,10 +6,10 @@ Geometry follows *Algorithms for Automated Driving* (AAD)
 
   - Road frame: X right, Y down, Z forward; road plane Y=0
   - Camera: OpenCV (X right, Y down, Z forward)
-  - ``pitch_deg < 0`` → looking down (AAD default −5°)
+  - ``pitch_deg < 0`` → looking down (AAD sign)
   - ``project_polyline``: ``uv ~ K @ T_road_to_cam @ [X,Y,Z,1]``
 
-Our bag lanes are ISO 8855 / openpilot ego:
+Our bag lanes are ISO 8855 ego:
   X forward, Y left, Z up, ground Z=0.
 
 Conversion (same as AAD ``uv_to_roadXYZ_roadframe_iso8855`` inverse):
@@ -20,7 +20,7 @@ Golf 7 windshield prior
   height = 1.40 m
   cam_x  = 1.70 m   (forward of ego ≈ rear axle → windshield, road Z)
   cam_y  = 0        (center)
-  pitch_deg = −6    (looking down; AAD sign)
+  pitch_deg = 0     (default; set negative to look down)
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ class CameraGeometry:
         self,
         height: float = 1.4,
         yaw_deg: float = 0.0,
-        pitch_deg: float = -6.0,
+        pitch_deg: float = 0.0,
         roll_deg: float = 0.0,
         cam_x: float = 1.70,
         cam_y_left: float = 0.0,
@@ -144,14 +144,14 @@ class CameraGeometry:
     @staticmethod
     def golf7_windshield(
         height: float = 1.4,
-        pitch_down_deg: float = 6.0,
+        pitch_down_deg: float = 0.0,
         cam_x: float = 1.70,
         **kwargs: Any,
     ) -> "CameraGeometry":
         """Golf 7 center-windshield prior (pitch_down_deg > 0 → AAD pitch_deg < 0)."""
         return CameraGeometry(
             height=height,
-            pitch_deg=-abs(pitch_down_deg),
+            pitch_deg=-abs(pitch_down_deg) if pitch_down_deg else 0.0,
             cam_x=cam_x,
             **kwargs,
         )
@@ -176,7 +176,7 @@ def iso_to_road_points(
     Y_left: np.ndarray,
     Z_up: float | np.ndarray = 0.0,
 ) -> np.ndarray:
-    """ISO8855 / openpilot points → AAD road-frame Nx3.
+    """ISO8855 ego points → AAD road-frame Nx3.
 
     (X_r, Y_r, Z_r) = (−Y_iso, −Z_iso, X_iso)
     """
@@ -399,16 +399,16 @@ Reference: Algorithms-for-Automated-Driving
 
 Road frame (AAD):  X right, Y down, Z forward; ground Y=0
 Camera (OpenCV):   X right, Y down, Z forward
-pitch_deg < 0  → looking down (AAD default −5°)
+pitch_deg < 0  → looking down (AAD sign)
 
-ISO8855 / openpilot lanes (bag):
+ISO8855 ego lanes (bag):
   X forward, Y left, Z up → road (−Y, −Z, X)
 
 Golf 7 windshield prior:
   height = 1.40 m
   cam_x  = 1.70 m   (ego rear-axle → windshield along Z_road)
   cam_y  = 0
-  pitch_deg = −6
+  pitch_deg = 0     (default; set negative to look down)
 
 Projection (AAD project_polyline):
   λ [u v 1]^T = K · T_road→cam · [X Y Z 1]^T

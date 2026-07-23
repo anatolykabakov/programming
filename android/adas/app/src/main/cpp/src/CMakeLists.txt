@@ -12,8 +12,12 @@ add_library(
   services/camera_calib_service.cpp
   services/topic_convert_service.cpp
   services/imu_calib_service.cpp
+  services/internal_subscriber.cpp
+  services/middleware_stats_service.cpp
   volkswagen/mqbcan.cpp
   volkswagen/carcontroller.cpp
+  volkswagen/mqb_car_state_decoder.cpp
+  volkswagen/panda_safety_supervisor.cpp
   utils/protobuf_utils.cpp
   utils/can_parser.cc
   utils/pure_pursuit.cpp
@@ -24,6 +28,7 @@ add_library(
   utils/topic_convert.cpp
   utils/imu_calibrator.cpp
   utils/adas_config.cpp
+  utils/proto_convert.cpp
 )
 target_link_libraries(
   adas_app_common
@@ -31,6 +36,8 @@ target_link_libraries(
     cppzmq
     protobuf_generated
     adas_panda
+    JsonCpp::JsonCpp
+    Eigen3::Eigen
 )
 target_include_directories(
   adas_app_common

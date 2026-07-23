@@ -9,47 +9,32 @@ import ai.flow.adas.Camera;
 import ai.flow.adas.CameraIntrinsicsOuterClass;
 import ai.flow.adas.Lanes;
 
-/**
- * Утилиты для конвертации protobuf сообщений в bag формат
- */
 public class ProtoUtils {
-    /**
-     * Конвертирует список ZMQMessage в bag.Bag сообщение
-     */
+
     public static BagOuterClass.Bag createBagMessage(List<Messages.ZMQMessage> zmqMessages) {
         BagOuterClass.Bag.Builder bagBuilder = BagOuterClass.Bag.newBuilder();
 
         if (!zmqMessages.isEmpty()) {
-            // Устанавливаем timestamp из первого сообщения
+
             com.google.protobuf.Timestamp timestamp = com.google.protobuf.util.Timestamps.fromMillis(zmqMessages.get(0).getTimestamp());
             bagBuilder.setTimestamp(timestamp);
 
-            // Добавляем все сообщения
             bagBuilder.addAllMessages(zmqMessages);
         }
 
         return bagBuilder.build();
     }
 
-    /**
-     * Конвертирует topic name в имя директории (заменяет / на __)
-     */
     public static String fixTopicName(String topicName) {
         if (topicName == null) return "";
         return topicName.replace("/", "__");
     }
 
-    /**
-     * Создает имя файла с данными в формате YYYY_MM_DD_HH_mm_ss.bin
-     */
     public static String createDataFileName(long timestamp) {
         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy_MM_dd_HH_mm_ss", java.util.Locale.US);
         return sdf.format(new java.util.Date(timestamp)) + ".bin";
     }
 
-    /**
-     * Проверяет, является ли сообщение валидным для bag логирования
-     */
     public static boolean isValidForBagLogging(Messages.ZMQMessage message) {
         if (message == null) return false;
 
@@ -70,20 +55,15 @@ public class ProtoUtils {
                message.hasLocalizationPose() ||
                message.hasCameraCalib() ||
                message.hasLaneUv() ||
-               message.hasCameraOdometry();
+               message.hasCameraOdometry() ||
+               message.hasMiddlewareStats();
     }
 
-    /**
-     * Получает размер сообщения в байтах
-     */
     public static int getMessageSize(Messages.ZMQMessage message) {
         if (message == null) return 0;
         return message.getSerializedSize();
     }
 
-    /**
-     * Создает IMU Data сообщение
-     */
     public static Messages.ZMQMessage createIMUDataMessage(java.util.List<Float> accel,
                                                           java.util.List<Float> gyro,
                                                           java.util.List<Float> mag,
@@ -121,9 +101,6 @@ public class ProtoUtils {
             .build();
     }
 
-    /**
-     * Создает GPS Location сообщение
-     */
     public static Messages.ZMQMessage createGPSLocationMessage(double latitude, double longitude,
                                                               double altitude, float speed,
                                                               float bearing, long timestamp) {
@@ -146,9 +123,6 @@ public class ProtoUtils {
             .build();
     }
 
-    /**
-     * Создает GPS Data сообщение
-     */
     public static Messages.ZMQMessage createGPSDataMessage(double latitude, double longitude,
                                                           double altitude, float speed,
                                                           float bearing, long timestamp) {
@@ -172,9 +146,6 @@ public class ProtoUtils {
             .build();
     }
 
-    /**
-     * Создает Camera Image сообщение (intrinsics must match JPEG width/height in bag).
-     */
     public static Messages.ZMQMessage createCameraImageMessage(java.util.List<Byte> imageData,
                                                               int width, int height,
                                                               String format, int frameId,
@@ -208,9 +179,6 @@ public class ProtoUtils {
             .build();
     }
 
-    /**
-     * Создает Camera Intrinsics сообщение
-     */
     public static Messages.ZMQMessage createCameraIntrinsicsMessage(
             float physicalFocalLengthMm,
             float sensorWidthMm, float sensorHeightMm,
@@ -258,17 +226,21 @@ public class ProtoUtils {
             .build();
     }
 
-    /**
-     * Создает LaneLines сообщение (vision / supercombo)
-     */
     public static Messages.ZMQMessage createLaneLinesMessage(ai.flow.adas.vision.LaneLines ll) {
+        return createLaneLinesMessage(ll, /*includeModelOut=*/true);
+    }
+
+    public static Messages.ZMQMessage createLaneLinesMessage(
+            ai.flow.adas.vision.LaneLines ll, boolean includeModelOut) {
         if (ll == null) {
             return null;
         }
 
         Lanes.LaneLines.Builder lanesBuilder = Lanes.LaneLines.newBuilder()
             .setTimestamp(ll.timestampMs)
-            .setFrameId(ll.frameId);
+            .setFrameId(ll.frameId)
+            .setCaptureTsMs(ll.captureTimestampMs > 0 ? ll.captureTimestampMs : ll.timestampMs)
+            .setInferTsMs(ll.inferTimestampMs);
 
         for (float x : ai.flow.adas.vision.LaneLines.X_IDXS) {
             lanesBuilder.addX(x);
@@ -278,12 +250,18 @@ public class ProtoUtils {
             for (float y : ll.lanesY[i]) {
                 poly.addY(y);
             }
+            for (float z : ll.lanesZ[i]) {
+                poly.addZ(z);
+            }
             lanesBuilder.addLanes(poly.build());
         }
         for (int i = 0; i < 2; i++) {
             Lanes.LanePolyline.Builder poly = Lanes.LanePolyline.newBuilder();
             for (float y : ll.edgesY[i]) {
                 poly.addY(y);
+            }
+            for (float z : ll.edgesZ[i]) {
+                poly.addZ(z);
             }
             lanesBuilder.addEdges(poly.build());
         }
@@ -299,6 +277,11 @@ public class ProtoUtils {
             }
             lanesBuilder.setPlanHyp(ll.planHypIndex);
         }
+        if (includeModelOut && ll.modelOut != null) {
+            for (float v : ll.modelOut) {
+                lanesBuilder.addModelOut(v);
+            }
+        }
 
         return Messages.ZMQMessage.newBuilder()
             .setTimestamp(ll.timestampMs)
@@ -307,7 +290,6 @@ public class ProtoUtils {
             .build();
     }
 
-    /** Model pose → {@code model/camera_odometry} for C++ PoseCalibrator. */
     public static Messages.ZMQMessage createCameraOdometryMessage(
             long timestampMs, int frameId, ai.flow.adas.vision.CameraOdometry pose) {
         if (pose == null || !pose.valid) {

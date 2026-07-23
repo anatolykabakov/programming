@@ -1,4 +1,4 @@
-// dbc_parser.h
+
 #pragma once
 #include <fstream>
 #include <string>
@@ -83,35 +83,31 @@ private:
     std::istringstream iss(line);
     std::string token;
 
-    iss >> token;  // "BO_"
-    iss >> token;  // ID
+    iss >> token;
+    iss >> token;
     uint32_t id = std::stoul(token);
 
-    iss >> token;  // Name:
+    iss >> token;
     size_t colon_pos = token.find(':');
     std::string name = token.substr(0, colon_pos);
 
-    // Следующий токен - это длина
-    iss >> token;  // Length
+    iss >> token;
     uint8_t length = static_cast<uint8_t>(std::stoul(token));
 
     messages[id] = {id, name, length, {}};
-    current_message_id = id;  // Устанавливаем текущее сообщение
+    current_message_id = id;
   }
 
   void parseSignal(const std::string& line)
   {
-    // Упрощенный парсинг сигнала
-    // Формат: SG_ name : start|length@endian+ (factor,offset) [min|max] "unit" sender
     std::istringstream iss(line);
     std::string token;
 
-    iss >> token;  // "SG_"
-    iss >> token;  // signal_name
+    iss >> token;
+    iss >> token;
 
     std::string signal_name = token;
 
-    // Поиск позиции сигнала
     size_t pos_start = line.find(" : ");
     if (pos_start == std::string::npos)
       return;
@@ -130,14 +126,13 @@ private:
 
     int length = std::stoi(length_str.substr(0, at_pos));
 
-    // Поиск фактора и смещения
     size_t paren_start = line.find('(');
     size_t paren_end = line.find(')');
     if (paren_start != std::string::npos && paren_end != std::string::npos) {
       std::string factor_offset = line.substr(paren_start + 1, paren_end - paren_start - 1);
       size_t comma_pos = factor_offset.find(',');
 
-      double factor = 0.01;  // по умолчанию
+      double factor = 0.01;
       double offset = 0.0;
 
       if (comma_pos != std::string::npos) {
@@ -145,7 +140,6 @@ private:
         offset = std::stod(factor_offset.substr(comma_pos + 1));
       }
 
-      // Добавление сигнала к текущему сообщению
       auto it = messages.find(current_message_id);
       if (it != messages.end()) {
         it->second.signals[signal_name] = {signal_name, start_bit, length, false, factor, offset, 0.0, 655.35, "km/h"};

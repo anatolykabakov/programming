@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Temporary: run openpilot supercombo.onnx and draw BEV (same as original demo)."""
+"""Temporary: run supercombo.onnx and draw BEV (same as original demo)."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,6 +11,7 @@ import cv2
 import numpy as np
 
 from .lane_projection import CameraGeometry, project_iso_xyz
+from .phone_rt import PhoneRtGeometry, project_overlay_xyz
 from .supercombo_parse import (
     X_IDXS,
     parse_supercombo,
@@ -17,8 +19,37 @@ from .supercombo_parse import (
     explain_output,
 )
 
-SUPERCOMBO_DIR = Path("/home/anatoly/atom/openpilot-supercombo-model")
-DEFAULT_MODEL = SUPERCOMBO_DIR / "supercombo.onnx"
+SUPERCOMBO_DIR = Path(
+    os.environ.get("SUPERCOMBO_DIR", str(Path.home() / "atom" / "models" / "supercombo"))
+)
+# Prefer packaged Android asset, then SUPERCOMBO_DIR / ~/atom/models/...
+# supercombo_compare.py → scripts/core/ → scripts/ → main/ → assets/
+_ASSETS_MODEL = Path(__file__).resolve().parents[2] / "assets" / "supercombo.onnx"
+
+
+def resolve_supercombo_model(explicit: Optional[str | Path] = None) -> Path:
+    """Resolve supercombo.onnx path (env / assets / default dir)."""
+    if explicit is not None:
+        p = Path(explicit).expanduser()
+        if p.is_file():
+            return p
+    env_model = os.environ.get("SUPERCOMBO_MODEL")
+    if env_model:
+        p = Path(env_model).expanduser()
+        if p.is_file():
+            return p
+    candidates = [
+        _ASSETS_MODEL,
+        SUPERCOMBO_DIR / "supercombo.onnx",
+        Path.home() / "atom" / "models" / "supercombo" / "supercombo.onnx",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return candidates[0]
+
+
+DEFAULT_MODEL = resolve_supercombo_model()
 
 
 def parse_image_yuv(frame_yuv_i420: np.ndarray) -> np.ndarray:
@@ -42,7 +73,7 @@ def make_overlay_geometry(
     w: int,
     h: int,
     camera_height: float = 1.22,
-    pitch_deg: float = -5.0,
+    pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     roll_deg: float = 0.0,
     cam_x: float = 0.0,
@@ -78,7 +109,7 @@ def project_xyz(
     w: int,
     h: int,
     x_min: float = 1.5,
-    pitch_deg: float = -5.0,
+    pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     geom: Optional[CameraGeometry] = None,
 ) -> List[Tuple[int, int]]:
@@ -98,7 +129,7 @@ def draw_pts(img: np.ndarray, pts: List[Tuple[int, int]], color, thickness: int)
 def draw_runtime_lanes(
     img: np.ndarray,
     out: SupercomboOut,
-    geom: CameraGeometry,
+    geom: CameraGeometry | PhoneRtGeometry,
     w: int,
     h: int,
     y_sign: float = -1.0,
@@ -108,10 +139,13 @@ def draw_runtime_lanes(
     for lane in out.lanes:
         if lane.prob < min_lane_prob:
             continue
-        pts = project_iso_xyz(
+        zs = getattr(lane, "z", None)
+        if zs is None:
+            zs = np.zeros_like(lane.y)
+        pts = project_overlay_xyz(
             X_IDXS,
             lane.y,
-            np.zeros_like(lane.y),
+            zs,
             geom,
             w,
             h,
@@ -123,17 +157,18 @@ def draw_runtime_lanes(
 def draw_bag_lanes(
     img: np.ndarray,
     lane_msg: Any,
-    geom: CameraGeometry,
+    geom: CameraGeometry | PhoneRtGeometry,
     w: int,
     h: int,
-    y_sign: float = 1.0,
+    y_sign: float = -1.0,
     min_lane_prob: float = 0.3,
     draw_edges: bool = True,
     draw_plan: bool = True,
 ) -> None:
     """Draw lane lines from bag ``vision/lanes``.
 
-    Android stores ISO Y-left (already negated), so default ``y_sign=1``.
+    Values are device Y-right (flowpilot). AAD needs ``y_sign=-1`` (ISO);
+    phone-Rt undoes that automatically when ``y_sign=-1``.
     """
     xs = np.asarray(list(lane_msg.x), dtype=np.float64) if lane_msg.x else X_IDXS.copy()
     for lane in lane_msg.lanes:
@@ -142,7 +177,7 @@ def draw_bag_lanes(
         y = np.asarray(list(lane.y), dtype=np.float64)
         if y.size != xs.size:
             continue
-        pts = project_iso_xyz(xs, y, np.zeros_like(y), geom, w, h, y_sign=y_sign)
+        pts = project_overlay_xyz(xs, y, np.zeros_like(y), geom, w, h, y_sign=y_sign)
         draw_pts(img, pts, (0, 255, 255), 2)
 
     if draw_edges:
@@ -150,14 +185,24 @@ def draw_bag_lanes(
             y = np.asarray(list(edge.y), dtype=np.float64)
             if y.size != xs.size:
                 continue
-            pts = project_iso_xyz(xs, y, np.zeros_like(y), geom, w, h, y_sign=y_sign)
+            pts = project_overlay_xyz(xs, y, np.zeros_like(y), geom, w, h, y_sign=y_sign)
             draw_pts(img, pts, (0, 0, 255), 2)
 
     if draw_plan and getattr(lane_msg, "plan_x", None) and getattr(lane_msg, "plan_y", None):
         px = np.asarray(list(lane_msg.plan_x), dtype=np.float64)
         py = np.asarray(list(lane_msg.plan_y), dtype=np.float64)
         if px.size >= 2 and px.size == py.size:
-            pts = project_iso_xyz(px, py, np.zeros_like(py), geom, w, h, x_min=0.5, y_sign=y_sign)
+            pts = project_overlay_xyz(
+                px,
+                py,
+                np.zeros_like(py),
+                geom,
+                w,
+                h,
+                x_min=0.5,
+                y_sign=y_sign,
+                path_lift=isinstance(geom, PhoneRtGeometry),
+            )
             draw_pts(img, pts, (0, 255, 0), 3)
 
 
@@ -165,14 +210,14 @@ def supercombo_lanes_to_ego(
     out: SupercomboOut,
     *,
     min_lane_prob: float = 0.3,
-    y_sign: float = -1.0,
+    y_sign: float = 1.0,
     x_min: float = 1.0,
     x_max: float = 40.0,
 ) -> Dict[str, np.ndarray]:
-    """Convert supercombo near-lanes to MetaDrive-style ``left_road`` / ``right_road``.
+    """Near-lanes → Nx2 polylines.
 
-    Output polylines are ego ISO: X forward, Y left. Raw ONNX Y is right-positive,
-    so ``y_sign=-1`` flips to left-positive (same as ``plan_to_polyline_ego``).
+    Default ``y_sign=1`` keeps **device Y-right** (Android PP). Pass ``y_sign=-1``
+    only for ISO Y-left MetaDrive GT-style overlays.
     """
     # LANE_NAMES: leftFar, leftNear, rightNear, rightFar
     by_name = {lane.name: lane for lane in out.lanes}
@@ -198,7 +243,7 @@ def supercombo_lanes_to_ego(
 def draw_supercombo_overlay(
     img: np.ndarray,
     out: SupercomboOut,
-    geom: CameraGeometry,
+    geom: CameraGeometry | PhoneRtGeometry,
     w: int,
     h: int,
     *,
@@ -212,10 +257,13 @@ def draw_supercombo_overlay(
     """Draw plan (green), lanes (yellow), road edges (red) — same as visualizer."""
     if draw_edges:
         for edge in out.edges:
-            pts = project_iso_xyz(
+            zs = getattr(edge, "z", None)
+            if zs is None:
+                zs = np.zeros_like(edge.y)
+            pts = project_overlay_xyz(
                 X_IDXS,
                 edge.y,
-                np.zeros_like(edge.y),
+                zs,
                 geom,
                 w,
                 h,
@@ -227,7 +275,7 @@ def draw_supercombo_overlay(
         draw_runtime_lanes(img, out, geom, w, h, y_sign=y_sign, min_lane_prob=min_lane_prob)
 
     if draw_plan:
-        pts = project_iso_xyz(
+        pts = project_overlay_xyz(
             out.plan.x,
             out.plan.y,
             out.plan.z,
@@ -236,13 +284,15 @@ def draw_supercombo_overlay(
             h,
             x_min=0.5,
             y_sign=y_sign,
+            path_lift=isinstance(geom, PhoneRtGeometry),
         )
         draw_pts(img, pts, (0, 255, 0), 3)
 
+    mode = "phone-rt" if isinstance(geom, PhoneRtGeometry) else "aad"
     probs = [f"{lane.prob:.2f}" for lane in out.lanes]
     cv2.putText(
         img,
-        f"supercombo plan#{out.plan.hyp_index}  lanes={lane_tag}  p={probs}",
+        f"supercombo plan#{out.plan.hyp_index}  lanes={lane_tag}  draw={mode}  p={probs}",
         (8, 20),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.4,
@@ -253,17 +303,61 @@ def draw_supercombo_overlay(
 
 
 class SupercomboBev:
-    """Lazy ONNX runner; correct v0.8-style parse (plan + lanes + edges)."""
+    """Lazy ONNX runner; Android-parity preprocess (calib warp + RNN) + parse."""
 
-    def __init__(self, model_path: Path = DEFAULT_MODEL):
-        self.model_path = Path(model_path)
+    def __init__(self, model_path: Optional[Path] = None):
+        self.model_path = resolve_supercombo_model(model_path)
         self._session = None
         self._names: Optional[Tuple[str, str, str, str, str]] = None
         self._prev: Optional[np.ndarray] = None
         self._prev_key: Optional[int] = None
         self._cache_key: Optional[int] = None
         self._cache_out: Optional[SupercomboOut] = None
+        self._rnn = np.zeros((1, 512), np.float32)
         self.error: Optional[str] = None
+        # Calib for ModelCalibWarp (phone full-res prior by default).
+        self.roll_deg = 0.0
+        self.pitch_deg = 0.0
+        self.yaw_deg = 0.0
+        self.fx = 930.0
+        self.fy = 930.0
+        self.cx = 640.0
+        self.cy = 360.0
+        self.use_calib_warp = True
+
+    def set_calib(
+        self,
+        roll_deg: float = 0.0,
+        pitch_deg: float = 0.0,
+        yaw_deg: float = 0.0,
+        fx: float = 930.0,
+        fy: float = 930.0,
+        cx: float = 640.0,
+        cy: float = 360.0,
+        *,
+        use_warp: bool = True,
+    ) -> None:
+        changed = (
+            self.roll_deg != float(roll_deg)
+            or self.pitch_deg != float(pitch_deg)
+            or self.yaw_deg != float(yaw_deg)
+            or self.fx != float(fx)
+            or self.fy != float(fy)
+            or self.cx != float(cx)
+            or self.cy != float(cy)
+            or self.use_calib_warp != bool(use_warp)
+        )
+        self.roll_deg = float(roll_deg)
+        self.pitch_deg = float(pitch_deg)
+        self.yaw_deg = float(yaw_deg)
+        self.fx = float(fx)
+        self.fy = float(fy)
+        self.cx = float(cx)
+        self.cy = float(cy)
+        self.use_calib_warp = bool(use_warp)
+        if changed:
+            # Intrinsics / RPY change → temporal stack + RNN invalid.
+            self.reset()
 
     def _ensure(self) -> bool:
         if self._session is not None:
@@ -297,6 +391,20 @@ class SupercomboBev:
         self._prev_key = None
         self._cache_key = None
         self._cache_out = None
+        self._rnn = np.zeros((1, 512), np.float32)
+
+    def _preprocess_yuv6(self, bgr: np.ndarray) -> np.ndarray:
+        from .model_calib_warp import warp_matrix_deg, warp_to_model
+
+        if self.use_calib_warp:
+            m = warp_matrix_deg(
+                self.roll_deg, self.pitch_deg, self.yaw_deg, self.fx, self.fy, self.cx, self.cy
+            )
+            img = warp_to_model(bgr, m)
+        else:
+            img = cv2.resize(bgr, (512, 256))
+        yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV_I420)
+        return parse_image_yuv(yuv).astype(np.float32)
 
     def infer(self, bgr: np.ndarray, cache_key: Optional[int] = None) -> Optional[SupercomboOut]:
         if cache_key is not None and cache_key == self._cache_key and self._cache_out is not None:
@@ -305,11 +413,9 @@ class SupercomboBev:
             return None
 
         assert self._session is not None and self._names is not None
-        img = cv2.resize(bgr, (512, 256))
-        yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV_I420)
-        parsed = parse_image_yuv(yuv).astype(np.float32)
+        parsed = self._preprocess_yuv6(bgr)
         # Temporal pair must be consecutive frames. Skipping (fast play / scrub)
-        # makes lanes lag and warp — duplicate current instead of a stale _prev.
+        # makes lanes lag — duplicate current instead of a stale _prev (Android-like).
         consecutive = (
             cache_key is not None and self._prev_key is not None and cache_key == self._prev_key + 1
         )
@@ -323,7 +429,6 @@ class SupercomboBev:
 
         desire = np.zeros((1, 8), np.float32)
         traffic = np.array([[1.0, 0.0]], np.float32)
-        state = np.zeros((1, 512), np.float32)
         in_imgs, in_desire, in_traffic, in_state, out_name = self._names
         (out,) = self._session.run(
             [out_name],
@@ -331,10 +436,14 @@ class SupercomboBev:
                 in_imgs: data,
                 in_desire: desire,
                 in_traffic: traffic,
-                in_state: state,
+                in_state: self._rnn,
             },
         )
-        parsed_out = parse_supercombo(out.reshape(-1))
+        flat = out.reshape(-1)
+        # Recurrent GRU state — last 512 floats (Android SupercomboOnnxRunner).
+        if flat.size >= 512:
+            self._rnn = flat[-512:].astype(np.float32).reshape(1, 512).copy()
+        parsed_out = parse_supercombo(flat)
         if cache_key is not None:
             self._cache_key = cache_key
             self._cache_out = parsed_out
@@ -351,7 +460,7 @@ class SupercomboBev:
         cache_key: Optional[int] = None,
         y_sign: float = -1.0,
         min_lane_prob: float = 0.3,
-        pitch_deg: float = -5.0,
+        pitch_deg: float = 0.0,
         yaw_deg: float = 0.0,
         roll_deg: float = 0.0,
         geom: Optional[CameraGeometry] = None,
@@ -359,7 +468,7 @@ class SupercomboBev:
         """Draw PLAN (green), lanes (yellow), road edges (red) on camera image.
 
         ``y_sign=-1``: this ONNX matches Android ``u=cx+fx*Y/X`` (Y positive right).
-        ``project_iso_xyz`` assumes openpilot ISO Y-left, so we flip once.
+        ``project_iso_xyz`` assumes ISO Y-left, so we flip once.
         """
         h_img, w_img = bgr.shape[:2]
         out = self.infer(bgr, cache_key=cache_key)

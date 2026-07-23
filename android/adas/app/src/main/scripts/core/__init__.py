@@ -1,10 +1,9 @@
-"""Shared ADAS helpers for bag/sim visualizers.
+"""Shared ADAS host helpers. Algorithms live in ``pyadas.AdasApp`` (C++).
 
-Algorithms (PP, EKF, VP calib, lane-keep) live in C++ (``pyadas``).
-Python modules are thin wrappers + IMU/Hough/viz utilities:
+Python here is viz / bag glue only:
 
-  - ``core.lane_keep.LaneKeepController`` → C++ ``LaneKeepService``
-  - ``core.online_localizer.OnlineLocalizer`` → C++ ``OnlineLocalizer``
-  - ``core.vanishing_point_calib.VanishingPointCalibrator`` → C++ ``CameraCalibService``
-  - ``core.supercombo_compare.SupercomboBev`` — ONNX compare (Python)
+  - ``core.lane_keep.LaneKeepController`` — publish chassis/lanes → AdasApp
+  - ``core.vanishing_point_calib`` — Hough → ``publish_lane_uv``
+  - ``core.pure_pursuit`` — draw / plan→polyline HUD
+  - ``core.online_localizer`` — IMU warm-up + MetaDrive EKF helper around C++
 """

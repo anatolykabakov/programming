@@ -12,7 +12,6 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.OutputConfiguration;
 import android.hardware.camera2.params.SessionConfiguration;
-import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
 import android.os.Handler;
@@ -25,8 +24,6 @@ import android.view.WindowManager;
 import android.graphics.SurfaceTexture;
 import android.graphics.Matrix;
 import android.graphics.RectF;
-import android.util.Size;
-
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -39,20 +36,26 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-
 public class CameraHandler {
 
     private final String TAG = "CameraHandler";
+
+    /** Fired on main/executor thread when camera becomes unusable (config fail, device error, etc.). */
+    public interface FailureListener {
+        void onCameraFailed(String reason);
+    }
 
     private final Context context;
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
     private ImageReader reader;
+    private Surface previewSurface;
     private CaptureRequest.Builder captureRequest;
     private CameraCaptureSession captureSession;
     private CameraDevice cameraDevice;
     private CameraCharacteristics cameraCharacteristics;
-
+    private FailureListener failureListener;
+    private volatile boolean sessionAlive;
 
     TextureView preview;
     private int viewWidth;
@@ -60,20 +63,17 @@ public class CameraHandler {
     private int sensorOrientation = 90;
     private boolean lensFacingFront = false;
 
-    // Optional vision pipeline (supercombo ONNX → lanes overlay / ZMQ)
     private ai.flow.adas.vision.VisionPipeline visionPipeline;
     private ai.flow.adas.vision.LaneOverlayView laneOverlay;
 
-    // ZMQ variables
     public int W = 1280;
     public int H = 720;
     public int frameID = 0;
 
-    // Image compression settings
-    private static final int JPEG_QUALITY = 70; // 0-100, lower = smaller file
-    private static final int SCALE_FACTOR = 2; // Scale down by this factor (2 = half size)
+    private static final int JPEG_QUALITY = 70;
+    private static final int SCALE_FACTOR = 2;
+    private static final int TARGET_FPS = 10;
 
-    /** Intrinsics for full capture (W×H); bag JPEG uses W/SCALE × H/SCALE. */
     private float bagFx;
     private float bagFy;
     private float bagCx;
@@ -83,9 +83,7 @@ public class CameraHandler {
     public CameraHandler(Context context, TextureView preview) {
         this.context = context;
         this.preview = preview;
-        backgroundThread = new HandlerThread("CameraBackground");
-        backgroundThread.start();
-        backgroundHandler = new Handler(backgroundThread.getLooper());
+        startBackgroundThread();
     }
 
     public void setVisionPipeline(ai.flow.adas.vision.VisionPipeline visionPipeline) {
@@ -96,10 +94,42 @@ public class CameraHandler {
         this.laneOverlay = laneOverlay;
     }
 
-    /**
-     * Correct aspect + sensor/display rotation (Camera2Basic-style).
-     * Call when the TextureView size changes and again after camera characteristics are known.
-     */
+    public void setFailureListener(FailureListener failureListener) {
+        this.failureListener = failureListener;
+    }
+
+    private void notifyFailed(String reason) {
+        Log.e(TAG, "Camera failed: " + reason);
+        sessionAlive = false;
+        FailureListener l = failureListener;
+        if (l != null) {
+            l.onCameraFailed(reason);
+        }
+    }
+
+    private void startBackgroundThread() {
+        if (backgroundThread != null && backgroundThread.isAlive()) {
+            return;
+        }
+        backgroundThread = new HandlerThread("CameraBackground");
+        backgroundThread.start();
+        backgroundHandler = new Handler(backgroundThread.getLooper());
+    }
+
+    private void stopBackgroundThread() {
+        if (backgroundThread == null) {
+            return;
+        }
+        backgroundThread.quitSafely();
+        try {
+            backgroundThread.join(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        backgroundThread = null;
+        backgroundHandler = null;
+    }
+
     public void configurePreviewTransform(int viewWidth, int viewHeight) {
         if (preview == null || viewWidth == 0 || viewHeight == 0) {
             return;
@@ -112,7 +142,7 @@ public class CameraHandler {
 
         Matrix matrix = new Matrix();
         RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
-        // Buffer is W×H; when the display is rotated 90/270 the effective buffer axes swap.
+
         RectF bufferRect = new RectF(0, 0, H, W);
         float centerX = viewRect.centerX();
         float centerY = viewRect.centerY();
@@ -126,7 +156,7 @@ public class CameraHandler {
         } else if (rotation == Surface.ROTATION_180) {
             matrix.postRotate(180f, centerX, centerY);
         } else {
-            // ROTATION_0: center-crop, no extra rotate
+
             float scale = Math.max((float) viewWidth / W, (float) viewHeight / H);
             float scaledW = W * scale;
             float scaledH = H * scale;
@@ -161,7 +191,17 @@ public class CameraHandler {
         }
     }
 
-    public void stop(){
+    /** Close device/session/reader/surface. Keeps background thread for reuse on resume. */
+    public void stop() {
+        sessionAlive = false;
+        if (captureSession != null) {
+            try {
+                captureSession.close();
+            } catch (Exception e) {
+                Log.w(TAG, "Error closing capture session", e);
+            }
+            captureSession = null;
+        }
         if (cameraDevice != null) {
             try {
                 cameraDevice.close();
@@ -170,17 +210,45 @@ public class CameraHandler {
             }
             cameraDevice = null;
         }
-        captureSession = null;
+        if (reader != null) {
+            try {
+                reader.close();
+            } catch (Exception e) {
+                Log.w(TAG, "Error closing ImageReader", e);
+            }
+            reader = null;
+        }
+        if (previewSurface != null) {
+            try {
+                previewSurface.release();
+            } catch (Exception e) {
+                Log.w(TAG, "Error releasing preview Surface", e);
+            }
+            previewSurface = null;
+        }
+        captureRequest = null;
+    }
+
+    /** Full teardown including HandlerThread — call from Activity.onDestroy. */
+    public void release() {
+        stop();
+        stopBackgroundThread();
     }
 
     public boolean isCameraOpen() {
-        return cameraDevice != null;
+        return cameraDevice != null && sessionAlive;
     }
 
     public void start() {
+        startBackgroundThread();
+        // Ensure clean reopen after pause / configure failure / disconnect.
+        if (cameraDevice != null || reader != null || captureSession != null) {
+            stop();
+        }
         android.hardware.camera2.CameraManager manager = (android.hardware.camera2.CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
 
         if (manager == null) {
+            notifyFailed("Unable to get camera manager");
             throw new RuntimeException("Unable to get camera manager.");
         }
 
@@ -196,8 +264,6 @@ public class CameraHandler {
             lensFacingFront = facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT;
             Log.i(TAG, "Camera characteristics: sensorOrientation=" + sensorOrientation
                     + " front=" + lensFacingFront);
-
-            StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
             if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 Log.e(TAG, "CAMERA permission not granted — openCamera skipped");
@@ -223,6 +289,9 @@ public class CameraHandler {
                     Log.w(TAG, "Camera onDisconnected");
                     device.close();
                     cameraDevice = null;
+                    sessionAlive = false;
+                    closeCaptureResourcesOnly();
+                    notifyFailed("Camera disconnected");
                 }
 
                 @Override
@@ -230,21 +299,55 @@ public class CameraHandler {
                     Log.e(TAG, "Camera onError: " + error);
                     device.close();
                     cameraDevice = null;
+                    sessionAlive = false;
+                    closeCaptureResourcesOnly();
+                    notifyFailed("Camera error " + error);
                 }
             }, backgroundHandler);
         } catch (CameraAccessException e) {
             Log.w(TAG, "Error getting camera configuration.", e);
+            notifyFailed("CameraAccessException: " + e.getMessage());
         }
+    }
+
+    private void closeCaptureResourcesOnly() {
+        if (captureSession != null) {
+            try {
+                captureSession.close();
+            } catch (Exception ignored) {
+            }
+            captureSession = null;
+        }
+        if (reader != null) {
+            try {
+                reader.close();
+            } catch (Exception ignored) {
+            }
+            reader = null;
+        }
+        if (previewSurface != null) {
+            try {
+                previewSurface.release();
+            } catch (Exception ignored) {
+            }
+            previewSurface = null;
+        }
+        captureRequest = null;
     }
 
     private void startCamera() {
         List<Surface> list = new ArrayList<>();
 
+        closeCaptureResourcesOnly();
         reader = ImageReader.newInstance(W, H, ImageFormat.YUV_420_888, 5);
 
         SurfaceTexture texture = preview.getSurfaceTexture();
+        if (texture == null) {
+            notifyFailed("Preview SurfaceTexture is null");
+            return;
+        }
         texture.setDefaultBufferSize(W, H);
-        Surface previewSurface = new Surface(texture);
+        previewSurface = new Surface(texture);
 
         list.add(reader.getSurface());
         list.add(previewSurface);
@@ -256,20 +359,19 @@ public class CameraHandler {
                     Image image = reader.acquireLatestImage();
                     if (image == null) return;
 
-                    // Color frame for ONNX vision (drop if pipeline is busy)
                     if (visionPipeline != null) {
                         Bitmap color = convertImageToArgbBitmap(image);
                         if (color != null) {
-                            visionPipeline.submitBitmap(color);
-                            // VisionPipeline copies the bitmap; recycle our local one.
+                            long captureTs = TimeUtil.nowMs();
+                            visionPipeline.submitBitmap(color, captureTs);
+
                             color.recycle();
                         }
                     }
 
-                    // Convert Image to grayscale Bitmap (most efficient for ADAS/logging)
                     Bitmap bitmap = convertImageToGrayscaleBitmap(image);
                     if (bitmap != null) {
-                        // Scale down image to reduce storage (4x smaller file size)
+
                         Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap, W/SCALE_FACTOR, H/SCALE_FACTOR, true);
                         bitmap.recycle();
                         bitmap = scaledBitmap;
@@ -328,24 +430,17 @@ public class CameraHandler {
             captureRequest.addTarget(list.get(0));
             captureRequest.addTarget(previewSurface);
 
-            // ========== CRITICAL SETTINGS FOR CAMERA CALIBRATION ==========
-
-            // 1. FIXED FOCUS - Most important for calibration
-            // Disable auto focus and set focus to infinity (0.0f = infinity, for ADAS)
             captureRequest.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
 
-            // Check if manual focus distance is supported
             Float minFocusDistance = cameraCharacteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
             if (minFocusDistance != null && minFocusDistance > 0) {
-                // 0.0f = infinity (best for ADAS - road/far objects)
+
                 captureRequest.set(CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f);
                 Log.i(TAG, "Set focus to infinity (0.0f) for calibration. Min focus distance: " + minFocusDistance);
             } else {
                 Log.w(TAG, "Manual focus distance not supported on this device");
             }
 
-            // 2. DISABLE OPTICAL IMAGE STABILIZATION (OIS)
-            // OIS physically moves lens elements, changing optical center
             int[] availableOIS = cameraCharacteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION);
             if (availableOIS != null && availableOIS.length > 0) {
                 captureRequest.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
@@ -355,8 +450,6 @@ public class CameraHandler {
                 Log.i(TAG, "Optical image stabilization (OIS) not available on this device");
             }
 
-            // 3. DISABLE VIDEO STABILIZATION (digital stabilization)
-            // Digital stabilization crops and scales image, changing intrinsic parameters
             int[] availableVideoStab = cameraCharacteristics.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES);
             if (availableVideoStab != null && availableVideoStab.length > 0) {
                 captureRequest.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
@@ -366,8 +459,6 @@ public class CameraHandler {
                 Log.i(TAG, "Video stabilization not available on this device");
             }
 
-            // 4. DISABLE LENS DISTORTION CORRECTION (Android P+)
-            // We want raw distortion for calibration, not corrected images
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 int[] availableDistortionModes = cameraCharacteristics.get(CameraCharacteristics.DISTORTION_CORRECTION_AVAILABLE_MODES);
                 if (availableDistortionModes != null && availableDistortionModes.length > 0) {
@@ -379,17 +470,19 @@ public class CameraHandler {
                 }
             }
 
-            // ========== OPTIONAL SETTINGS ==========
+            Range<Integer> fps = pickTargetFpsRange(cameraCharacteristics, TARGET_FPS);
+            if (fps != null) {
+                captureRequest.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fps);
+                Log.i(TAG, "Set target FPS range " + fps.getLower() + "-" + fps.getUpper());
+            } else {
+                Log.w(TAG, "No AE FPS ranges available; leaving default");
+            }
 
-            // Frame rate
-            captureRequest.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<>(10, 10));
-            Log.i(TAG, "Set target FPS to 10");
-
-            // Log camera intrinsic parameters for calibration reference
             logCameraIntrinsics();
 
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error building capture request", e);
+            notifyFailed("Capture request failed: " + e.getMessage());
             return;
         }
 
@@ -408,19 +501,72 @@ public class CameraHandler {
                                 @Override
                                 public void onConfigured(CameraCaptureSession session) {
                                     captureSession = session;
+                                    sessionAlive = true;
                                     startSession();
                                 }
 
                                 @Override
                                 public void onConfigureFailed(CameraCaptureSession session) {
-                                    System.out.println("### Configuration Fail ###");
+                                    sessionAlive = false;
+                                    Log.e(TAG, "Capture session configuration failed");
+                                    closeCaptureResourcesOnly();
+                                    if (cameraDevice != null) {
+                                        try {
+                                            cameraDevice.close();
+                                        } catch (Exception ignored) {
+                                        }
+                                        cameraDevice = null;
+                                    }
+                                    notifyFailed("Capture session configuration failed");
                                 }
                             }
                     )
             );
         } catch (Throwable t) {
-            t.printStackTrace();
+            Log.e(TAG, "createCaptureSession failed", t);
+            notifyFailed("createCaptureSession: " + t.getMessage());
         }
+    }
+
+    /** Prefer a fixed TARGET_FPS range; else closest lower≤target≤upper; else first available. */
+    private static Range<Integer> pickTargetFpsRange(CameraCharacteristics chars, int targetFps) {
+        Range<Integer>[] ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+        if (ranges == null || ranges.length == 0) {
+            return null;
+        }
+        Range<Integer> exact = null;
+        Range<Integer> covering = null;
+        int coveringSpan = Integer.MAX_VALUE;
+        for (Range<Integer> r : ranges) {
+            if (r.getLower() == targetFps && r.getUpper() == targetFps) {
+                exact = r;
+                break;
+            }
+            if (r.getLower() <= targetFps && r.getUpper() >= targetFps) {
+                int span = r.getUpper() - r.getLower();
+                if (span < coveringSpan) {
+                    coveringSpan = span;
+                    covering = r;
+                }
+            }
+        }
+        if (exact != null) {
+            return exact;
+        }
+        if (covering != null) {
+            return covering;
+        }
+        Range<Integer> best = ranges[0];
+        int bestDist = Math.abs(best.getUpper() - targetFps) + Math.abs(best.getLower() - targetFps);
+        for (int i = 1; i < ranges.length; i++) {
+            Range<Integer> r = ranges[i];
+            int dist = Math.abs(r.getUpper() - targetFps) + Math.abs(r.getLower() - targetFps);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = r;
+            }
+        }
+        return best;
     }
 
     private void startSession() {
@@ -439,36 +585,28 @@ public class CameraHandler {
         }
     }
 
-    /**
-     * Log camera intrinsic parameters that are needed for calibration.
-     * These values should be saved with calibration images for reference.
-     */
     private void logCameraIntrinsics() {
         try {
             StringBuilder intrinsicsData = new StringBuilder();
             intrinsicsData.append("=== CAMERA INTRINSIC PARAMETERS ===\n");
 
-            // Focal length in mm (physical)
             float[] focalLengths = cameraCharacteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
             if (focalLengths != null && focalLengths.length > 0) {
                 intrinsicsData.append("Physical focal length: ").append(focalLengths[0]).append(" mm\n");
             }
 
-            // Sensor physical size in mm
             android.util.SizeF sensorSize = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
             if (sensorSize != null) {
                 intrinsicsData.append("Sensor physical size: ").append(sensorSize.getWidth())
                               .append(" x ").append(sensorSize.getHeight()).append(" mm\n");
             }
 
-            // Active pixel array size (actual image resolution from sensor)
             android.graphics.Rect activeArray = cameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
             if (activeArray != null) {
                 intrinsicsData.append("Active pixel array: ").append(activeArray.width())
                               .append(" x ").append(activeArray.height()).append(" pixels\n");
             }
 
-            // Lens distortion coefficients (if available on Android P+)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 float[] distortion = cameraCharacteristics.get(CameraCharacteristics.LENS_DISTORTION);
                 if (distortion != null && distortion.length >= 5) {
@@ -482,7 +620,6 @@ public class CameraHandler {
                 }
             }
 
-            // Lens intrinsic calibration (if available on Android P+)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 float[] intrinsicCalibration = cameraCharacteristics.get(CameraCharacteristics.LENS_INTRINSIC_CALIBRATION);
                 if (intrinsicCalibration != null && intrinsicCalibration.length >= 5) {
@@ -496,7 +633,6 @@ public class CameraHandler {
                 }
             }
 
-            // Calculate approximate focal length in pixels
             if (focalLengths != null && focalLengths.length > 0 &&
                 sensorSize != null && activeArray != null) {
                 float focalLengthMm = focalLengths[0];
@@ -508,11 +644,9 @@ public class CameraHandler {
                 intrinsicsData.append("Note: This is approximate. Use calibration for accurate values.\n");
             }
 
-            // Image resolution we're actually capturing
             intrinsicsData.append("Capture resolution: ").append(W).append(" x ").append(H).append(" pixels\n");
             intrinsicsData.append("=== End of camera intrinsics ===");
 
-            // Always compute bag-scaled K; write to bag when logger is running.
             try {
                 long currentTime = TimeUtil.nowMs();
 
@@ -566,9 +700,7 @@ public class CameraHandler {
                 }
 
                 bagFx = fxBag;
-                // Keep square pixels for JPEG buffer (16:9 crop); anamorphic fy from
-                // full active-array height lifts lane overlays off the road.
-                bagFy = fxBag;
+                bagFy = fyBag;
                 bagCx = cxBag;
                 bagCy = cyBag;
                 bagIntrinsicsReady = true;
@@ -600,16 +732,12 @@ public class CameraHandler {
         }
     }
 
-    /** Re-emit bag-scaled intrinsics after Start Logging. */
     public void ensureBagIntrinsicsLogged() {
         if (cameraCharacteristics != null) {
             logCameraIntrinsics();
         }
     }
 
-    /**
-     * Convert Android Image (YUV_420_888) to ARGB Bitmap for model input.
-     */
     private Bitmap convertImageToArgbBitmap(Image image) {
         try {
             int width = image.getWidth();
@@ -630,7 +758,7 @@ public class CameraHandler {
                     int uvIndex = (j / 2) * uvRowStride + (i / 2) * uvPixelStride;
                     int u = uBuf.get(uvIndex) & 0xff;
                     int v = vBuf.get(uvIndex) & 0xff;
-                    // BT.601 YUV → RGB
+
                     int c = y - 16;
                     int d = u - 128;
                     int e = v - 128;
@@ -651,42 +779,23 @@ public class CameraHandler {
         return v < 0 ? 0 : (Math.min(v, 255));
     }
 
-    /**
-     * Convert Android Image (YUV_420_888) to grayscale Bitmap (most efficient)
-     */
     private Bitmap convertImageToGrayscaleBitmap(Image image) {
         try {
             Image.Plane[] planes = image.getPlanes();
             int width = image.getWidth();
             int height = image.getHeight();
-
-            Log.d(TAG, "Converting Image to grayscale Bitmap: " + width + "x" + height);
-
-            // Get Y plane (luminance) - this is already grayscale!
             ByteBuffer yBuffer = planes[0].getBuffer();
-            int ySize = yBuffer.remaining();
+            int yRowStride = planes[0].getRowStride();
+            int yPixelStride = planes[0].getPixelStride();
 
-            // Create grayscale pixel array
             int[] pixels = new int[width * height];
-            byte[] yData = new byte[ySize];
-            yBuffer.get(yData);
-
-            // Convert Y values directly to ARGB grayscale
-            for (int i = 0; i < pixels.length; i++) {
-                int y = yData[i] & 0xFF; // Convert signed byte to unsigned
-                // Create grayscale pixel: ARGB format
-                pixels[i] = 0xFF000000 | (y << 16) | (y << 8) | y;
+            for (int j = 0; j < height; j++) {
+                for (int i = 0; i < width; i++) {
+                    int y = yBuffer.get(j * yRowStride + i * yPixelStride) & 0xFF;
+                    pixels[j * width + i] = 0xFF000000 | (y << 16) | (y << 8) | y;
+                }
             }
-
-            // Create Bitmap directly from pixel array
-            Bitmap bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888);
-
-            if (bitmap != null) {
-                Log.d(TAG, "Successfully converted Image to grayscale Bitmap: " + bitmap.getWidth() + "x" + bitmap.getHeight());
-            }
-
-            return bitmap;
-
+            return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888);
         } catch (Exception e) {
             Log.e(TAG, "Error converting Image to grayscale Bitmap: " + e.getMessage(), e);
             return null;

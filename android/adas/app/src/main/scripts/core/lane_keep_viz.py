@@ -3,15 +3,18 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import cv2
 import numpy as np
 
 from .lane_keep import LaneKeepResult
-from .lane_projection import CameraGeometry, project_iso_xyz
+from .lane_projection import CameraGeometry
+from .phone_rt import PhoneRtGeometry, project_overlay_xyz
 from .pure_pursuit import draw_pure_pursuit
 from .supercombo_compare import draw_pts, make_overlay_geometry
+
+OverlayGeom = Union[CameraGeometry, PhoneRtGeometry]
 
 
 def _to_uint8(img: np.ndarray) -> np.ndarray:
@@ -23,7 +26,7 @@ def _to_uint8(img: np.ndarray) -> np.ndarray:
 def _draw_ego_polyline(
     img: np.ndarray,
     polyline: Optional[np.ndarray],
-    geom: CameraGeometry,
+    geom: OverlayGeom,
     w: int,
     h: int,
     color: tuple[int, int, int],
@@ -36,7 +39,7 @@ def _draw_ego_polyline(
     poly = np.asarray(polyline, dtype=np.float64)
     if poly.ndim != 2 or poly.shape[0] < 2:
         return
-    pts = project_iso_xyz(
+    pts = project_overlay_xyz(
         poly[:, 0],
         poly[:, 1],
         np.zeros(poly.shape[0], dtype=np.float64),
@@ -131,7 +134,7 @@ def draw_lane_keep_overlay(
     w: int,
     h: int,
     lanes: Optional[Dict[str, Any]] = None,
-    pitch_deg: float = -6.0,
+    pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     roll_deg: float = 0.0,
     camera_height: float = 1.40,
@@ -139,13 +142,13 @@ def draw_lane_keep_overlay(
     y_sign: float = 1.0,
     draw_bev: bool = False,
     draw_footer: bool = True,
-    geom: Optional[CameraGeometry] = None,
+    geom: Optional[OverlayGeom] = None,
     gt_poly: Optional[np.ndarray] = None,
     gt_lk: Optional[LaneKeepResult] = None,
 ) -> np.ndarray:
-    """Project lane boundaries / centerline + Pure Pursuit HUD (AAD geometry).
+    """Project lane boundaries / centerline + Pure Pursuit HUD.
 
-    ``gt_poly`` / ``gt_lk``: MetaDrive GT centerline (white) and shadow GT PP for compare.
+    Default geom is AAD. Pass ``PhoneRtGeometry`` to match ModelCalibWarp / phone overlay.
     """
     out = _to_uint8(img.copy())
 
@@ -184,8 +187,6 @@ def draw_lane_keep_overlay(
 
     if draw_footer:
         status = f"LK {lk.mode}  steer={np.rad2deg(lk.steer_rad):+.1f}°  κ={lk.curvature:.4f}  {lk.status}"
-        if lk.mode == "lateral_pd":
-            status += f"  e_y={lk.e_y:.2f} e_psi={np.rad2deg(lk.e_psi):+.1f}°"
         if gt_lk is not None:
             status += f"  GT δ={np.rad2deg(gt_lk.steer_rad):+.1f}°"
         cv2.putText(

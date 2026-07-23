@@ -23,7 +23,7 @@ set_target_properties(
   PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pyadas"
 )
 
-# Also drop next to scripts for easy PYTHONPATH (app/src/main/scripts/pyadas)
+# Copy next to bag/host scripts (app/src/main/scripts/pyadas).
 set(SCRIPTS_PYADAS "${PROJECT_SOURCE_DIR}/../scripts/pyadas")
 add_custom_command(
   TARGET core
@@ -34,7 +34,7 @@ add_custom_command(
     ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/pyadas/__init__.py"
     "${SCRIPTS_PYADAS}/__init__.py"
-  COMMENT "Copy pyadas module next to scripts"
+  COMMENT "Copy pyadas core module into scripts/"
   VERBATIM
 )
 

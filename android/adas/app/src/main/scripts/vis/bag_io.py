@@ -8,8 +8,15 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROTO_DIR = SCRIPT_DIR / "proto"
+# Generated stubs live in scripts/proto (see generate_proto_python.sh).
+PROTO_DIR = SCRIPT_DIR.parent / "proto"
+if not PROTO_DIR.is_dir():
+    PROTO_DIR = SCRIPT_DIR / "proto"  # legacy fallback
 sys.path.insert(0, str(PROTO_DIR))
+
+import os
+
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 import bag_pb2  # noqa: E402
 import messages_pb2  # noqa: E402

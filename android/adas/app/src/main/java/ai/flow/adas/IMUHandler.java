@@ -14,7 +14,7 @@ import ai.flow.adas.Messages.ZMQMessage;
 public class IMUHandler implements SensorEventListener {
 
     private static final String TAG = "IMUHandler";
-    private static final int SENSOR_DELAY = SensorManager.SENSOR_DELAY_GAME; // ~50Hz
+    private static final int SENSOR_DELAY = SensorManager.SENSOR_DELAY_GAME;
 
     private final SensorManager sensorManager;
     private boolean isRunning = false;

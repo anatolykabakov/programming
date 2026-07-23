@@ -2,21 +2,26 @@
 
 #include <optional>
 
-#include "framework/service_manager.hpp"
+#include "middleware/middleware.hpp"
 #include "utils/adas_topics.h"
 #include "utils/imu_calibrator.h"
 
 namespace adas {
 
-/**
- * Phone IMU → vehicle yaw_rate.
- * Topics: sub sensors/imu_raw + vehicle/chassis → pub sensors/imu_yaw.
- *
- * Prior R from mount angles → yaw immediately; quiet standstill locks R, then EMA bias.
- */
-class ImuCalibService : public microros::Service {
+class ImuCalibService : public adas::Service {
 public:
-  explicit ImuCalibService(double speed_threshold_kmh = 0.5, int min_samples = 50, bool invert_yaw_rate = true);
+  struct Config {
+    double speed_threshold_kmh = 0.5;
+    int min_samples = 50;
+    bool invert_yaw_rate = true;
+    double mount_roll_deg = 0.0;
+    double mount_pitch_deg = 0.0;
+    double mount_yaw_deg = 0.0;
+    bool has_mount_prior = false;
+  };
+
+  ImuCalibService() : ImuCalibService(Config{}) {}
+  explicit ImuCalibService(Config config);
 
   void configure() override;
   void reset() override;
@@ -26,6 +31,7 @@ public:
   ImuCalibrator& calibrator() { return calib_; }
   const ImuCalibrator& calibrator() const { return calib_; }
   const ImuSample& last() const { return last_; }
+  const Config& config() const { return config_; }
 
   std::optional<double> push(const RawImuSample& raw, double speed_mps);
 
@@ -34,9 +40,10 @@ private:
   void onRawImu(const RawImuSample& msg);
   void publishYaw(int64_t timestamp_us, double yaw_rate);
 
+  Config config_;
   ImuCalibrator calib_;
   double speed_threshold_kmh_ = 0.5;
-  double prior_roll_ = 0, prior_pitch_ = -6.0, prior_yaw_ = 0;
+  double prior_roll_ = 0, prior_pitch_ = 0.0, prior_yaw_ = 0;
   bool have_prior_angles_ = false;
   ChassisSample chassis_;
   bool have_chassis_ = false;

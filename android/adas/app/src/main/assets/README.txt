@@ -1,7 +1,7 @@
 ADAS assets (app/src/main/assets)
 
-  config.json       — node flags, vehicle, camera priors, zmq.endpoint_in/out
-  supercombo.onnx   — openpilot supercombo (bundled at assets root)
+  config.json       — node feature flags + vehicle + camera calib priors
+  supercombo.onnx   — vision supercombo model (bundled at assets root)
   vw_mqb_2010.dbc   — Golf 7 / MQB CAN DB
 
 Model load order (SupercomboOnnxRunner):
@@ -11,4 +11,4 @@ Model load order (SupercomboOnnxRunner):
 
 Optional push:
   adb shell mkdir -p /sdcard/adas_models
-  adb push openpilot-supercombo-model/supercombo.onnx /sdcard/adas_models/supercombo.onnx
+  adb push /path/to/supercombo.onnx /sdcard/adas_models/supercombo.onnx

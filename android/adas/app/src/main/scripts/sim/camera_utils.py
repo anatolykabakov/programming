@@ -13,6 +13,14 @@ except ImportError:  # pragma: no cover
     DEFAULT_SENSOR_OFFSET = (0.0, 0.8, 1.5)
     DEFAULT_SENSOR_HPR = (0.0, 0.0, 0.0)
 
+# Windshield mount used when MetaDrive HPR is identity (see CameraParams.mount_on_agent).
+# ISO: offset panda (X right, Y forward, Z up) → height=z, cam_x=y.
+METADRIVE_MOUNT_OFFSET = tuple(DEFAULT_SENSOR_OFFSET)  # (0, 0.8, 1.5)
+METADRIVE_MOUNT_HPR_DEG = (0.0, 0.59681, 0.0)  # heading, pitch look-up, roll
+METADRIVE_MOUNT_HEIGHT_M = float(METADRIVE_MOUNT_OFFSET[2])  # 1.5
+METADRIVE_MOUNT_CAM_X_M = float(METADRIVE_MOUNT_OFFSET[1])  # 0.8
+METADRIVE_MOUNT_PITCH_DEG = float(METADRIVE_MOUNT_HPR_DEG[1])  # ≈0.6
+
 
 class ZupRightHandCS:
     def __init__(self):
@@ -86,12 +94,12 @@ class CameraParams:
         hpr: Optional[Tuple[float, float, float]] = None,
     ) -> None:
         """Track RGB camera to ego with MetaDrive default windshield mount."""
-        offset = tuple(offset) if offset is not None else tuple(DEFAULT_SENSOR_OFFSET)
+        offset = tuple(offset) if offset is not None else tuple(METADRIVE_MOUNT_OFFSET)
         hpr = tuple(hpr) if hpr is not None else tuple(DEFAULT_SENSOR_HPR)
         # MetaDrive sometimes uses a small look-up pitch when switching agents
         if hpr == tuple(DEFAULT_SENSOR_HPR):
             # Keep slight windshield pitch used by base_env.switch_to_next_vehicle
-            hpr = (0.0, 0.59681, 0.0)
+            hpr = METADRIVE_MOUNT_HPR_DEG
         self.mount_offset = np.array(offset, dtype=np.float64)
         self.mount_hpr = np.array(hpr, dtype=np.float64)
         self.sensor.track(self.env.agent.origin, offset, hpr)
@@ -214,6 +222,46 @@ class CameraGeometry:
         u = uvw[0, :] / uvw[2, :]
         v = uvw[1, :] / uvw[2, :]
         return np.stack((u, v)).T
+
+    def project_polyline_iso(
+        self,
+        poly: np.ndarray,
+        *,
+        x_min: float = 0.5,
+        margin: float = 80.0,
+        image_size: tuple[int, int] | None = None,
+    ) -> list[tuple[int, int]]:
+        """ISO ego polyline (X fwd, Y left[, Z up]) → image pixels. Z defaults to 0 (road)."""
+        a = np.asarray(poly, dtype=np.float64)
+        if a.ndim != 2 or a.shape[0] < 2 or a.shape[1] < 2:
+            return []
+        n = a.shape[0]
+        xyz = np.zeros((n, 3), dtype=np.float64)
+        xyz[:, 0] = a[:, 0]
+        xyz[:, 1] = a[:, 1]
+        if a.shape[1] >= 3:
+            xyz[:, 2] = a[:, 2]
+        ok = np.isfinite(xyz).all(axis=1) & (xyz[:, 0] >= x_min)
+        if not np.any(ok):
+            return []
+        xyz = xyz[ok]
+        # Front of camera (OpenCV Z forward after extrinsics)
+        hom = np.concatenate([xyz, np.ones((xyz.shape[0], 1))], axis=1)
+        cam = (self.Rt[:3, :] @ hom.T).T
+        front = cam[:, 2] > 0.2
+        if not np.any(front):
+            return []
+        uv = self.xyz_to_uv(xyz[front])
+        w = h = None
+        if image_size is not None:
+            w, h = image_size
+        pts: list[tuple[int, int]] = []
+        for u, v in uv:
+            if w is not None and h is not None:
+                if u < -margin or u >= w + margin or v < -margin or v >= h + margin:
+                    continue
+            pts.append((int(round(u)), int(round(v))))
+        return pts
 
     def uv_to_xyz(self, uv):
         uv_coords = np.stack([uv[:, 0], uv[:, 1], np.ones_like(uv[:, 0])])

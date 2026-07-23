@@ -1,5 +1,4 @@
 #pragma once
-// Port of dragonpilot selfdrive/car/volkswagen/values.py (MQB subset).
 
 #include <cstdint>
 #include <string>
@@ -12,25 +11,22 @@ struct CanBus {
   static constexpr int cam = 2;
 };
 
-// MQB CarControllerParams (Golf 7 / vw_mqb_2010).
 struct CarControllerParams {
-  static constexpr int STEER_STEP = 2;  // HCA @ 50Hz when update runs @ 100Hz
-  static constexpr int LDW_STEP = 10;   // LDW_02 @ 10Hz
+  static constexpr int STEER_STEP = 2;
+  static constexpr int LDW_STEP = 10;
 
-  static constexpr int STEER_MAX = 300;  // cNm
+  static constexpr int STEER_MAX = 300;
   static constexpr int STEER_DRIVER_MULTIPLIER = 3;
   static constexpr int STEER_DRIVER_FACTOR = 1;
-  static constexpr int STEER_DRIVER_ALLOWANCE = 80;  // cNm
-  // Must match panda safety_volkswagen_mqb.h SteeringLimits (else TX → rejected/src=0xC0).
-  static constexpr int STEER_DELTA_UP = 4;     // safety max_rate_up
-  static constexpr int STEER_DELTA_DOWN = 10;  // safety max_rate_down
+  static constexpr int STEER_DRIVER_ALLOWANCE = 80;
 
-  // LDW_Texte values (MQB)
+  static constexpr int STEER_DELTA_UP = 4;
+  static constexpr int STEER_DELTA_DOWN = 10;
+
   static constexpr int LDW_MSG_NONE = 0;
-  static constexpr int LDW_MSG_TAKE_OVER = 8;  // silent "Please Take Over Steering"
+  static constexpr int LDW_MSG_TAKE_OVER = 8;
 };
 
-// EPS_HCA_Status (LH_EPS_03) — matches DBC VAL_
 enum class EpsHcaStatus : uint8_t {
   Disabled = 0,
   Initializing = 1,

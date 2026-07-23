@@ -1,5 +1,4 @@
 #pragma once
-// Port of dragonpilot selfdrive/car/volkswagen/mqbcan.py (MQB lateral subset).
 
 #include <cstdint>
 
@@ -15,7 +14,6 @@ struct HudControl {
   bool rightLaneDepart = false;
 };
 
-// Raw 8-byte stock LDW_02 (camera) for passthrough of untouched signals.
 struct LdwStockValues {
   uint8_t data[8]{};
   bool valid = false;

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 # Import generated protobuf files
-sys.path.insert(0, str(Path(__file__).resolve().parent / "vis" / "proto"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "proto"))
 import messages_pb2
 import can_pb2
 

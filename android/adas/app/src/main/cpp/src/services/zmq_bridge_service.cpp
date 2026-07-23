@@ -2,8 +2,8 @@
 
 #include "utils/logger.h"
 
-ZmqBridgeService::ZmqBridgeService(std::string endpoint_in, std::string endpoint_out)
-  : endpoint_in_(std::move(endpoint_in)), endpoint_out_(std::move(endpoint_out))
+ZmqBridgeService::ZmqBridgeService(Config config)
+  : config_(std::move(config)), endpoint_in_(config_.endpoint_in), endpoint_out_(config_.endpoint_out)
 {
 }
 
@@ -14,7 +14,8 @@ void ZmqBridgeService::configure()
   try {
     zmq_context_ = std::make_unique<zmq::context_t>(1);
     initSockets();
-    scheduleTimer(10000, [this]() { zmqPollTimerCallback(); });
+    scheduleTimer(
+        10, [this]() { zmqPollTimerCallback(); }, "poll");
     LOGI("ZMQ bridge ready: SUB bind %s | PUB bind %s (%zu outbound topics)", endpoint_in_.c_str(),
          endpoint_out_.c_str(), kZmqOutboundTopics.size());
   } catch (const std::exception& e) {
@@ -49,18 +50,14 @@ void ZmqBridgeService::zmqPollTimerCallback()
 {
   if (poll_items_.empty())
     return;
-  // Drain inbound burst (vision/lanes + imu); one recv/10ms was starving lane keep.
-  for (int i = 0; i < 64; ++i) {
-    const auto n = zmq::poll(poll_items_.data(), poll_items_.size(), std::chrono::milliseconds(0));
-    if (n <= 0 || !(poll_items_[0].revents & ZMQ_POLLIN))
-      break;
+  const auto n = zmq::poll(poll_items_.data(), poll_items_.size(), std::chrono::milliseconds(1));
+  if (n > 0 && (poll_items_[0].revents & ZMQ_POLLIN)) {
     processInbound();
   }
 }
 
 void ZmqBridgeService::processInbound()
 {
-  // Multipart: [topic][payload]. Also accept single-frame protobuf (topic from message).
   zmq::message_t frame0;
   auto r0 = sub_in_->recv(frame0, zmq::recv_flags::dontwait);
   if (!r0)
@@ -108,13 +105,16 @@ void ZmqBridgeService::onInternalMessage(const std::string& topic_name, const ai
   if (!pub_out_)
     return;
 
-  ai::flow::adas::ZMQMessage out = msg;
-  if (out.topic().empty()) {
-    out.set_topic(topic_name);
-  }
-
   std::string serialized;
-  if (!out.SerializeToString(&serialized)) {
+  if (msg.topic().empty()) {
+    ai::flow::adas::ZMQMessage tmp;
+    tmp.CopyFrom(msg);
+    tmp.set_topic(topic_name);
+    if (!tmp.SerializeToString(&serialized)) {
+      LOGE("Failed to serialize outbound '%s'", topic_name.c_str());
+      return;
+    }
+  } else if (!msg.SerializeToString(&serialized)) {
     LOGE("Failed to serialize outbound '%s'", topic_name.c_str());
     return;
   }

@@ -7,7 +7,6 @@
 #include <sstream>
 #include "panda/can_frame.h"
 
-// Структура для хранения CAN фрейма с таймштампом
 struct CanFrameWithTimestamp {
   uint64_t timestamp;
   can_frame frame;
@@ -18,14 +17,12 @@ private:
   std::ofstream log_file_;
   std::string filename_;
 
-  // Получить текущее время в миллисекундах
   uint64_t getCurrentTimestamp()
   {
     auto now = std::chrono::system_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
   }
 
-  // Форматировать данные в hex
   std::string formatHexData(const std::string& data)
   {
     std::stringstream ss;
@@ -39,23 +36,18 @@ private:
   }
 
 public:
-  // Конструктор с кастомным именем файла
   CanLogger(const std::string& filename) : filename_(filename)
   {
-    // Проверяем, существует ли файл, если нет - создаем
     std::ifstream check_file(filename_);
     if (!check_file.good()) {
-      // Файл не существует, создаем его
       std::ofstream create_file(filename_);
       create_file.close();
     }
     check_file.close();
 
-    // Открываем файл для записи
     log_file_.open(filename_, std::ios::out | std::ios::app);
   }
 
-  // Конструктор с автоматическим именем файла
   CanLogger()
   {
     auto now = std::chrono::system_clock::now();
@@ -64,16 +56,13 @@ public:
     ss << "can_log_" << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S") << ".csv";
     filename_ = ss.str();
 
-    // Проверяем, существует ли файл, если нет - создаем
     std::ifstream check_file(filename_);
     if (!check_file.good()) {
-      // Файл не существует, создаем его
       std::ofstream create_file(filename_);
       create_file.close();
     }
     check_file.close();
 
-    // Открываем файл для записи
     log_file_.open(filename_, std::ios::out | std::ios::app);
   }
 
@@ -84,7 +73,6 @@ public:
     }
   }
 
-  // Логировать CAN фрейм
   void logCanFrame(const can_frame& frame)
   {
     if (!log_file_.is_open())
@@ -98,13 +86,10 @@ public:
     log_file_.flush();
   }
 
-  // Получить имя файла
   const std::string& getFilename() const { return filename_; }
 
-  // Проверить, открыт ли файл
   bool isOpen() const { return log_file_.is_open(); }
 
-  // Парсинг CAN фрейма из строки лога
   static std::optional<CanFrameWithTimestamp> parseCanFrameFromLine(const std::string& log_line)
   {
     if (log_line.empty())
@@ -129,10 +114,8 @@ public:
     try {
       CanFrameWithTimestamp result;
 
-      // Парсим таймштамп
       result.timestamp = std::stoull(timestamp);
 
-      // Парсим адрес (формат: 0xXXX)
       if (address.length() < 3 || address.substr(0, 2) != "0x") {
         return std::nullopt;
       }
@@ -148,7 +131,6 @@ public:
   }
 
 private:
-  // Парсинг hex данных в строку
   static std::string parseHexData(const std::string& hex_data)
   {
     std::string result;
@@ -161,7 +143,6 @@ private:
           uint8_t byte_value = static_cast<uint8_t>(std::stoul(hex_byte, nullptr, 16));
           result += static_cast<char>(byte_value);
         } catch (const std::exception&) {
-          // Пропускаем некорректные байты
         }
       }
     }

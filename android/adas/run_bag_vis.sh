@@ -4,4 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS="$ROOT/app/src/main/scripts"
 export PYTHONPATH="$SCRIPTS${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 "$SCRIPTS/interactive_visualizer.py" "$@"
+# Pure-Python protobuf: avoids TypeError with newer google.protobuf vs older _pb2.py
+export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+exec python3 "$SCRIPTS/vis/interactive_visualizer.py" "$@"

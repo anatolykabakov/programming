@@ -3,21 +3,29 @@
 #include <optional>
 #include <tuple>
 
-#include "framework/service_manager.hpp"
+#include "middleware/middleware.hpp"
 #include "utils/adas_topics.h"
 #include "utils/math_utils.h"
 #include "utils/online_localizer.h"
 
 namespace adas {
 
-/**
- * Online EKF localization.
- * Topics: sub vehicle/chassis + gps + sensors/imu_yaw (from ImuCalibService) → pub localization/pose.
- * Standalone step() / resetPose() for Python.
- */
-class LocalizationService : public microros::Service {
+class LocalizationService : public adas::Service {
 public:
-  LocalizationService(double wheelbase = 2.636, double gps_noise_pos = 0.5, double gps_update_interval = 0.2);
+  struct Config {
+    double wheelbase_m = 2.636;
+    double gps_noise_pos = 0.5;
+    double gps_update_interval = 0.2;
+    bool use_cam_odo = true;
+    bool invert_cam_yaw_rate = false;
+    /** Ignore GPS samples older than this vs chassis time (BOOTTIME us). */
+    int64_t gps_max_age_us = 2'500'000;
+  };
+
+  LocalizationService() : LocalizationService(Config{}) {}
+  explicit LocalizationService(Config config);
+
+  std::string_view getName() const override { return "localization"; }
 
   void configure() override;
   void reset() override;
@@ -34,19 +42,25 @@ public:
   OnlineLocalizer& localizer() { return loc_; }
   const OnlineLocalizer& localizer() const { return loc_; }
   const LocalizationPose& lastPose() const { return last_pose_; }
+  const Config& config() const { return config_; }
 
 private:
   void onChassis(const ChassisSample& msg);
   void onGps(const GpsSample& msg);
   void onImu(const ImuSample& msg);
+  void onCameraOdometry(const CameraOdometrySample& msg);
   void publishPose(int64_t timestamp_us);
 
+  Config config_;
   OnlineLocalizer loc_;
   ChassisSample chassis_;
   GpsSample gps_;
   ImuSample imu_;
+  CameraOdometrySample cam_odo_;
   bool have_chassis_ = false;
+  bool have_cam_odo_ = false;
   int64_t last_t_us_ = 0;
+  int64_t last_gps_log_us_ = 0;
   LocalizationPose last_pose_;
 };
 

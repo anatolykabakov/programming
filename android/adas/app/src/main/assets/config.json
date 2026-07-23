@@ -6,37 +6,31 @@
     "lane_keep": true,
     "localization": true,
     "camera_calib": true,
-    "imu_calib": true,
     "vision_supercombo": true
   },
   "vehicle": {
     "name": "vw_golf_7_mqb",
     "wheelbase_m": 2.636,
     "steer_ratio": 15.7,
-    "max_steer_deg": 8,
-    "max_torque_cnm": 300,
-    "lat_pid_kp": 0.6,
-    "lat_pid_ki": 0.2,
-    "lat_pid_kf": 0.00006,
-    "comment": "LatControlPID (flowpilot VW): error=desired_SWA−LWI → torque. Gains kp/ki/kf. max_steer_deg clamps PP road-wheel desire; HCA max 300 cNm."
+    "steer_sign": -1.0
   },
   "calibration": {
     "camera": {
       "frame": "iso_vehicle",
-      "comment": "Phone mount extrinsics (tuned via bag overlay). Pitch/yaw may be refined online by VP calib.",
+      "comment": "Initial extrinsic approx (phone on Golf windshield). Pitch/yaw refined online by VP calib.",
       "position_m": {
-        "x_forward": 0.0,
-        "y_left": -0.02,
-        "z_up": 0.7
+        "x_forward": 1.50,
+        "y_left": 0.0,
+        "z_up": 1.1
       },
       "rpy_deg": {
         "roll": 0.0,
-        "pitch": 0.76,
-        "yaw": 1.56
+        "pitch": 0.0,
+        "yaw": 0.0
       },
       "intrinsics_prior": {
-        "fx": 930.0,
-        "fy": 930.0,
+        "fx": 951.0,
+        "fy": 951.0,
         "cx": 640.0,
         "cy": 360.0,
         "width": 1280,
@@ -44,10 +38,5 @@
       }
     }
   },
-  "supercombo_asset": "supercombo.onnx",
-  "zmq": {
-    "endpoint_in": "tcp://127.0.0.1:5555",
-    "endpoint_out": "tcp://127.0.0.1:5556",
-    "comment": "Java connects PUB→IN / SUB←OUT; native binds SUB@IN / PUB@OUT. Avoid 5555 for adb tcpip."
-  }
+  "supercombo_asset": "supercombo.onnx"
 }

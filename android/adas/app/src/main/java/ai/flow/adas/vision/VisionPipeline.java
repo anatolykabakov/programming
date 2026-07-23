@@ -11,10 +11,6 @@ import ai.flow.adas.Messages;
 import ai.flow.adas.ProtoUtils;
 import ai.flow.adas.ZMQBridgeService;
 
-/**
- * ONNX runner thread: Bitmap → LaneLines + CameraOdometry → overlay / ZMQ + bag.
- * Live calib algorithm lives in C++ CameraCalibService (flowpilot pose path).
- */
 public class VisionPipeline {
     private static final String TAG = "VisionPipeline";
 
@@ -27,6 +23,10 @@ public class VisionPipeline {
     private volatile boolean busy;
     private int frameId;
 
+    public VisionPipeline(Context context, LaneOverlayView overlay) throws Exception {
+        this(context, overlay, true);
+    }
+
     public VisionPipeline(Context context, LaneOverlayView overlay, boolean cameraCalib)
             throws Exception {
         this.overlay = overlay;
@@ -38,24 +38,33 @@ public class VisionPipeline {
     }
 
     public void submitBitmap(Bitmap bitmap) {
+        submitBitmap(bitmap, ai.flow.adas.TimeUtil.nowMs());
+    }
+
+    /** @param captureTsMs BOOTTIME ms when the camera frame arrived / was submitted */
+    public void submitBitmap(Bitmap bitmap, long captureTsMs) {
         if (busy || bitmap == null) {
             return;
         }
         busy = true;
         final Bitmap copy = bitmap.copy(Bitmap.Config.ARGB_8888, false);
         final int id = frameId++;
+        final long captureTs = captureTsMs > 0 ? captureTsMs : ai.flow.adas.TimeUtil.nowMs();
         handler.post(() -> {
             try {
-                SupercomboOnnxRunner.Result res = runner.run(copy, id);
+                SupercomboOnnxRunner.Result res = runner.run(copy, id, captureTs);
                 if (res == null || res.lanes == null) {
                     return;
                 }
                 LaneLines lanes = res.lanes;
                 overlay.setLanes(lanes);
-                Messages.ZMQMessage bagMsg = ProtoUtils.createLaneLinesMessage(lanes);
+                Messages.ZMQMessage bagMsg = ProtoUtils.createLaneLinesMessage(lanes, true);
                 if (bagMsg != null) {
-                    ZMQBridgeService.publishToNative(bagMsg);
                     Logger.getInstance().logZMQMessage(bagMsg);
+                }
+                Messages.ZMQMessage ctrlMsg = ProtoUtils.createLaneLinesMessage(lanes, false);
+                if (ctrlMsg != null) {
+                    ZMQBridgeService.publishToNative(ctrlMsg);
                 }
                 if (publishPose && res.pose != null && res.pose.valid) {
                     Messages.ZMQMessage poseMsg =
@@ -72,6 +81,12 @@ public class VisionPipeline {
                 busy = false;
             }
         });
+    }
+
+    public void setCalib(float rollDeg, float pitchDeg, float yawDeg,
+                         float fx, float fy, float cx, float cy,
+                         int width, int height) {
+        runner.setCalib(rollDeg, pitchDeg, yawDeg, fx, fy, cx, cy, width, height);
     }
 
     public void close() {

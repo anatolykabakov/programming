@@ -8,8 +8,6 @@
 #include <optional>
 #include <vector>
 
-// #include "car.capnp.h"
-// #include "log.capnp.h"
 #include "panda/health.h"
 #include "panda/can_declarations.h"
 #include "panda/can.h"
@@ -26,7 +24,7 @@
 
 namespace cereal::PandaState {
 enum class PandaType : uint16_t {
-  UNKNOWN,  // ← Это и есть UNKNOWN
+  UNKNOWN,
   WHITE_PANDA,
   GREY_PANDA,
   BLACK_PANDA,
@@ -63,12 +61,10 @@ public:
   bool comms_healthy();
   std::string hw_serial();
 
-  // Static functions
   static std::vector<std::string> list();
 
-  // Panda functionality
   cereal::PandaState::PandaType get_hw_type();
-  // void set_safety_model(cereal::CarParams::SafetyModel safety_model, uint16_t safety_param=0U);
+
   void set_safety_model(uint16_t safety_model, uint16_t safety_param = 0U);
   void set_alternative_experience(uint16_t alternative_experience, uint16_t safety_param_sp = 0U);
   void set_rtc(struct tm sys_time);
@@ -95,7 +91,6 @@ public:
   void can_reset_communications();
 
 protected:
-  // for unit tests
   uint8_t receive_buffer[RECV_SIZE + sizeof(can_header) + 64];
   uint32_t receive_buffer_size = 0;
 

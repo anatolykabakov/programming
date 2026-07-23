@@ -17,15 +17,6 @@ import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtLoggingLevel;
 import ai.onnxruntime.OrtSession;
 
-/**
- * Minimal openpilot supercombo ONNX runner for Android.
- * Preprocess mirrors openpilot-supercombo-model/openpilot_onnx.py:
- *   resize 512x256 → YUV I420 → 6ch half-res → stack 2 frames → [1,12,128,256]
- *
- * Output parse follows openpilot v0.8.x driving.cc (NOT the buggy demo grouping):
- *   plan @0 (5 MHP × 991), lanes @4955 (4×33×(y,z)), probs @5483, edges @5491.
- * Lateral Y is negated on parse (ONNX Y-right → openpilot Y-left).
- */
 public class SupercomboOnnxRunner {
     private static final String TAG = "SupercomboOnnx";
 
@@ -36,16 +27,16 @@ public class SupercomboOnnxRunner {
     public static final int TENSOR_H = 128;
     public static final int TENSOR_W = 256;
 
-    // Output layout (supercombo.onnx out=6409), openpilot ~v0.8.x
+
     private static final int PLAN_END = 4955;
-    private static final int LANES_END = PLAN_END + 528;       // 5483
-    private static final int LANE_PROB_END = LANES_END + 8;    // 5491
-    private static final int ROAD_END = LANE_PROB_END + 264;   // 5755
+    private static final int LANES_END = PLAN_END + 528;
+    private static final int LANE_PROB_END = LANES_END + 8;
+    private static final int ROAD_END = LANE_PROB_END + 264;
 
     private static final int PLAN_MHP_N = 5;
     private static final int PLAN_COLS = 15;
-    /** 33×15 means + 33×15 stds + 1 selection logit */
-    private static final int PLAN_GROUP = 2 * PLAN_COLS * LaneLines.N + 1; // 991
+
+    private static final int PLAN_GROUP = 2 * PLAN_COLS * LaneLines.N + 1;
 
     private final OrtEnvironment env;
     private final OrtSession session;
@@ -53,8 +44,20 @@ public class SupercomboOnnxRunner {
     private final float[] traffic = new float[2];
     private final float[] rnnState = new float[512];
 
-    private float[] prevFrame6; // 6*128*256
+    private float[] prevFrame6;
     private boolean hasPrev;
+
+    /** Model←camera warp (model→camera homography); rebuilt via {@link #setCalib}. */
+    private float[] warpM = ModelCalibWarp.warpMatrixDeg(0, 0, 0, 930f, 930f, 640f, 360f);
+    private float rollDeg;
+    private float pitchDeg;
+    private float yawDeg;
+    private float fx = 930f;
+    private float fy = 930f;
+    private float cx = 640f;
+    private float cy = 360f;
+    private int calibW = 1280;
+    private int calibH = 720;
 
     private final int[] resizePixels = new int[MODEL_W * MODEL_H];
     private final byte[] yuvI420 = new byte[MODEL_W * MODEL_H * 3 / 2];
@@ -88,16 +91,45 @@ public class SupercomboOnnxRunner {
                     + " size=" + model.length(), e);
             throw e;
         }
-        // RHT (right-hand traffic): [1, 0]
+
         traffic[0] = 1.f;
         traffic[1] = 0.f;
         Log.i(TAG, "ONNX inputs=" + session.getInputNames() + " outputs=" + session.getOutputNames());
     }
 
+    /**
+     * Update calib warp from UI / config (degrees + camera K for capture resolution).
+     * Resets temporal pair so the next frame re-seeds the stack.
+     */
+    public synchronized void setCalib(float rollDeg, float pitchDeg, float yawDeg,
+                                      float fx, float fy, float cx, float cy,
+                                      int width, int height) {
+        this.rollDeg = rollDeg;
+        this.pitchDeg = pitchDeg;
+        this.yawDeg = yawDeg;
+        this.fx = fx;
+        this.fy = fy;
+        this.cx = cx;
+        this.cy = cy;
+        this.calibW = Math.max(1, width);
+        this.calibH = Math.max(1, height);
+        this.warpM = ModelCalibWarp.warpMatrixDeg(rollDeg, pitchDeg, yawDeg, fx, fy, cx, cy);
+        this.hasPrev = false;
+        this.prevFrame6 = null;
+        Log.i(TAG, String.format(
+                "calib warp rpy_deg=(%.2f,%.2f,%.2f) K=(%.1f,%.1f,%.1f,%.1f) %dx%d",
+                rollDeg, pitchDeg, yawDeg, fx, fy, cx, cy, calibW, calibH));
+    }
+
+    public synchronized void setCalib(float rollDeg, float pitchDeg, float yawDeg,
+                                      float fx, float fy, float cx, float cy) {
+        setCalib(rollDeg, pitchDeg, yawDeg, fx, fy, cx, cy, calibW, calibH);
+    }
+
     private static File resolveModelFile(Context context) throws Exception {
         String assetName = "supercombo.onnx";
         try {
-            assetName = AdasConfig.load(context).supercomboAsset;
+            assetName = AdasConfig.supercomboAsset(context);
         } catch (Throwable ignored) {
         }
         File external = new File("/sdcard/adas_models/" + assetName);
@@ -105,7 +137,7 @@ public class SupercomboOnnxRunner {
             return external;
         }
         File cached = new File(context.getFilesDir(), assetName);
-        // Prefer fresh asset over stale cache (e.g. after model swap/rollback).
+
         long assetLen = -1;
         try (InputStream in = context.getAssets().open(assetName)) {
             assetLen = in.available();
@@ -128,26 +160,37 @@ public class SupercomboOnnxRunner {
             throw new IllegalStateException(
                     assetName + " not found. Push with:\n" +
                     "  adb shell mkdir -p /sdcard/adas_models\n" +
-                    "  adb push openpilot-supercombo-model/supercombo.onnx /sdcard/adas_models/supercombo.onnx",
+                    "  adb push /path/to/supercombo.onnx /sdcard/adas_models/supercombo.onnx",
                     e);
         }
     }
 
-    /** Run on a background thread. Accepts ARGB Bitmap (camera preview size). */
+
     public synchronized Result run(Bitmap frame, int frameId) throws Exception {
-        Bitmap resized = Bitmap.createScaledBitmap(frame, MODEL_W, MODEL_H, true);
+        return run(frame, frameId, ai.flow.adas.TimeUtil.nowMs());
+    }
+
+    public synchronized Result run(Bitmap frame, int frameId, long captureTsMs) throws Exception {
+        // Scale K if capture size ≠ intrinsics prior size.
+        float[] m = warpM;
+        if (frame.getWidth() != calibW || frame.getHeight() != calibH) {
+            float sx = frame.getWidth() / (float) calibW;
+            float sy = frame.getHeight() / (float) calibH;
+            m = ModelCalibWarp.warpMatrixDeg(
+                    rollDeg, pitchDeg, yawDeg, fx * sx, fy * sy, cx * sx, cy * sy);
+        }
+        Bitmap warped = ModelCalibWarp.warpToModel(frame, m);
         try {
-            resized.getPixels(resizePixels, 0, MODEL_W, 0, 0, MODEL_W, MODEL_H);
+            warped.getPixels(resizePixels, 0, MODEL_W, 0, 0, MODEL_W, MODEL_H);
             rgbToYuvI420(resizePixels, MODEL_W, MODEL_H, yuvI420);
             parseImageYuvI420(yuvI420, MODEL_W, MODEL_H, currFrame6);
 
             if (!hasPrev) {
                 prevFrame6 = currFrame6.clone();
                 hasPrev = true;
-                return null; // need 2 frames
+                return null;
             }
 
-            // Stack [prev, curr] → [1,12,128,256]
             System.arraycopy(prevFrame6, 0, input12, 0, prevFrame6.length);
             System.arraycopy(currFrame6, 0, input12, prevFrame6.length, currFrame6.length);
             System.arraycopy(currFrame6, 0, prevFrame6, 0, currFrame6.length);
@@ -159,7 +202,7 @@ public class SupercomboOnnxRunner {
                  OnnxTensor tState = OnnxTensor.createTensor(env, FloatBuffer.wrap(rnnState), new long[]{1, 512})) {
 
                 Map<String, OnnxTensor> feeds = new HashMap<>();
-                // Bind by canonical names used in this ONNX (see openpilot_onnx.py)
+
                 feeds.put("input_imgs", tImgs);
                 feeds.put("desire", tDesire);
                 feeds.put("traffic_convention", tTraffic);
@@ -170,10 +213,14 @@ public class SupercomboOnnxRunner {
                     float[] flat = flattenOutput(value);
                     LaneLines lanes = parseLanes(flat);
                     lanes.frameId = frameId;
-                    lanes.timestampMs = ai.flow.adas.TimeUtil.nowMs();
+                    long capture = captureTsMs > 0 ? captureTsMs : ai.flow.adas.TimeUtil.nowMs();
+                    long infer = ai.flow.adas.TimeUtil.nowMs();
+                    lanes.captureTimestampMs = capture;
+                    lanes.inferTimestampMs = infer;
+                    lanes.timestampMs = capture;  // primary = frame arrival for e2e latency
+                    lanes.modelOut = flat;
                     CameraOdometry pose = CameraOdometry.parse(flat);
 
-                    // Feed recurrent state from tail of output if present
                     if (flat.length >= CameraOdometry.POSE_IDX + CameraOdometry.POSE_SIZE
                             + CameraOdometry.TEMPORAL_SIZE) {
                         System.arraycopy(flat, flat.length - CameraOdometry.TEMPORAL_SIZE,
@@ -185,9 +232,7 @@ public class SupercomboOnnxRunner {
                 }
             }
         } finally {
-            if (resized != frame) {
-                resized.recycle();
-            }
+            warped.recycle();
         }
     }
 
@@ -209,7 +254,7 @@ public class SupercomboOnnxRunner {
             return ll;
         }
 
-        // --- PLAN: best of 5 MHP ---
+
         int bestHyp = 0;
         float bestLogit = Float.NEGATIVE_INFINITY;
         for (int i = 0; i < PLAN_MHP_N; i++) {
@@ -223,29 +268,30 @@ public class SupercomboOnnxRunner {
         for (int i = 0; i < LaneLines.N; i++) {
             int row = planBase + i * PLAN_COLS;
             ll.planX[i] = out[row];
-            // Model lateral is Y-right for this ONNX; store openpilot Y-left (+left).
-            ll.planY[i] = -out[row + 1];
+
+            // Device frame (flowpilot/openpilot): X forward, Y right-positive, Z up.
+            ll.planY[i] = out[row + 1];
             ll.planZ[i] = out[row + 2];
         }
         ll.planHypIndex = bestHyp;
         ll.hasPlan = true;
 
-        // --- LANES: first 264 = 4×33×(y,z) means; second 264 = stds (ignored) ---
+
         for (int lane = 0; lane < 4; lane++) {
             int base = PLAN_END + lane * 66;
             for (int i = 0; i < LaneLines.N; i++) {
-                ll.lanesY[lane][i] = -out[base + i * 2];
+                ll.lanesY[lane][i] = out[base + i * 2];
                 ll.lanesZ[lane][i] = out[base + i * 2 + 1];
             }
-            // official: sigmoid(prob[i*2 + 1])
+
             ll.laneProbs[lane] = sigmoid(out[LANES_END + lane * 2 + 1]);
         }
 
-        // --- ROAD EDGES: first 132 = 2×33×(y,z) means ---
+
         for (int edge = 0; edge < 2; edge++) {
             int base = LANE_PROB_END + edge * 66;
             for (int i = 0; i < LaneLines.N; i++) {
-                ll.edgesY[edge][i] = -out[base + i * 2];
+                ll.edgesY[edge][i] = out[base + i * 2];
                 ll.edgesZ[edge][i] = out[base + i * 2 + 1];
             }
         }
@@ -256,7 +302,7 @@ public class SupercomboOnnxRunner {
         return (float) (1.0 / (1.0 + Math.exp(-x)));
     }
 
-    /** RGB888 int pixels → planar YUV I420 (Y full, then U, then V subsampled). */
+
     static void rgbToYuvI420(int[] argb, int w, int h, byte[] out) {
         int ySize = w * h;
         int uvW = w / 2;
@@ -284,19 +330,16 @@ public class SupercomboOnnxRunner {
         }
     }
 
-    /**
-     * Same packing as openpilot_onnx.parse_image / flowpilot YUV420toTensor:
-     * 6 planes at H/2 x W/2 from I420 frame of size HxW (here 256x512 → 128x256).
-     */
+
     static void parseImageYuvI420(byte[] frame, int w, int h, float[] out6) {
-        int H = (frame.length * 2) / 3 / w; // should equal h
+        int H = (frame.length * 2) / 3 / w;
         if (H != h) {
             H = h;
         }
         int hh = H / 2;
         int ww = w / 2;
         int plane = hh * ww;
-        // Y subsampled into 4 planes
+
         for (int j = 0; j < hh; j++) {
             for (int i = 0; i < ww; i++) {
                 int y00 = frame[(2 * j) * w + (2 * i)] & 0xff;

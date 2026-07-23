@@ -3,66 +3,55 @@
 #include <algorithm>
 #include <cmath>
 
+#include <Eigen/Dense>
+
 namespace adas {
 
-std::optional<std::pair<double, double>> getIntersection(const ImageLine& a, const ImageLine& b)
+std::optional<Vec2> getIntersection(const ImageLine& a, const ImageLine& b)
 {
   if (std::abs(a.m - b.m) < 1e-9)
     return std::nullopt;
   const double u = (b.c - a.c) / (a.m - b.m);
   const double v = a.m * u + a.c;
-  return std::make_pair(u, v);
+  return Vec2(u, v);
 }
 
-std::pair<double, double> getPitchYawFromVp(double u_i, double v_i, double fx, double fy, double cx, double cy)
+Vec2 getPitchYawFromVp(double u_i, double v_i, double fx, double fy, double cx, double cy)
 {
-  // r3 = K^{-1} [u,v,1], then yaw = -atan2(r3x,r3z), pitch = asin(r3y)
-  const double x = (u_i - cx) / fx;
-  const double y = (v_i - cy) / fy;
-  const double z = 1.0;
-  const double n = std::sqrt(x * x + y * y + z * z);
-  const double r3x = x / n;
-  const double r3y = y / n;
-  const double r3z = z / n;
-  const double yaw = -std::atan2(r3x, r3z);
-  const double pitch = std::asin(std::clamp(r3y, -1.0, 1.0));
-  return {pitch, yaw};
+  const Vec3 r3 = Vec3((u_i - cx) / fx, (v_i - cy) / fy, 1.0).normalized();
+  const double yaw = -std::atan2(r3.x(), r3.z());
+  const double pitch = std::asin(std::clamp(r3.y(), -1.0, 1.0));
+  return Vec2(pitch, yaw);
 }
 
 std::optional<ImageLine> fitLineVOfU(const std::vector<Vec2>& uv, double mean_residuals_thresh)
 {
-  std::vector<double> us, vs;
-  us.reserve(uv.size());
-  vs.reserve(uv.size());
+  std::vector<Vec2> pts;
+  pts.reserve(uv.size());
   for (const auto& p : uv) {
-    if (std::isfinite(p.x) && std::isfinite(p.y)) {
-      us.push_back(p.x);
-      vs.push_back(p.y);
-    }
+    if (p.allFinite())
+      pts.push_back(p);
   }
-  if (us.size() < 8)
+  if (pts.size() < 8)
     return std::nullopt;
 
-  const double n = static_cast<double>(us.size());
-  double sum_u = 0, sum_v = 0, sum_uu = 0, sum_uv = 0;
-  for (size_t i = 0; i < us.size(); ++i) {
-    sum_u += us[i];
-    sum_v += vs[i];
-    sum_uu += us[i] * us[i];
-    sum_uv += us[i] * vs[i];
+  const Eigen::Index n = static_cast<Eigen::Index>(pts.size());
+  Eigen::MatrixXd A(n, 2);
+  Eigen::VectorXd b(n);
+  for (Eigen::Index i = 0; i < n; ++i) {
+    A(i, 0) = pts[static_cast<size_t>(i)].x();
+    A(i, 1) = 1.0;
+    b(i) = pts[static_cast<size_t>(i)].y();
   }
-  const double denom = n * sum_uu - sum_u * sum_u;
-  if (std::abs(denom) < 1e-12)
-    return std::nullopt;
-  const double m = (n * sum_uv - sum_u * sum_v) / denom;
-  const double c = (sum_v - m * sum_u) / n;
 
-  double rss = 0;
-  for (size_t i = 0; i < us.size(); ++i) {
-    const double e = vs[i] - (m * us[i] + c);
-    rss += e * e;
-  }
-  if (rss / n > mean_residuals_thresh)
+  const Eigen::Vector2d mc = A.colPivHouseholderQr().solve(b);
+  if (!mc.allFinite())
+    return std::nullopt;
+
+  const double m = mc(0);
+  const double c = mc(1);
+  const double rss = (b - A * mc).squaredNorm();
+  if (rss / static_cast<double>(n) > mean_residuals_thresh)
     return std::nullopt;
   return ImageLine{m, c};
 }
@@ -91,14 +80,13 @@ bool VanishingPointCalibrator::addToHistory(double pitch_rad, double yaw_rad)
   history_.emplace_back(pitch_rad, yaw_rad);
   if (static_cast<int>(history_.size()) <= history_len_)
     return false;
-  double sp = 0, sy = 0;
-  for (const auto& py : history_) {
-    sp += py.first;
-    sy += py.second;
-  }
-  const double inv = 1.0 / static_cast<double>(history_.size());
-  pitch_deg_ = sp * inv * 180.0 / M_PI;
-  yaw_deg_ = sy * inv * 180.0 / M_PI;
+
+  Vec2 sum = Vec2::Zero();
+  for (const auto& py : history_)
+    sum += py;
+  const Vec2 mean = sum / static_cast<double>(history_.size());
+  pitch_deg_ = mean.x() * 180.0 / M_PI;
+  yaw_deg_ = mean.y() * 180.0 / M_PI;
   success_ = true;
   ++n_updates_;
   history_.clear();
@@ -111,12 +99,14 @@ bool VanishingPointCalibrator::updateFromLines(const ImageLine& left, const Imag
   auto vp = getIntersection(left, right);
   if (!vp)
     return false;
-  const double u_i = vp->first;
-  const double v_i = vp->second;
+  const double u_i = vp->x();
+  const double v_i = vp->y();
   if (!(-0.5 * cx <= u_i && u_i <= 2.5 * cx && -0.5 * cy <= v_i && v_i <= 2.5 * cy)) {
     return false;
   }
-  auto [pitch, yaw] = getPitchYawFromVp(u_i, v_i, fx, fy, cx, cy);
+  const Vec2 pitch_yaw = getPitchYawFromVp(u_i, v_i, fx, fy, cx, cy);
+  const double pitch = pitch_yaw.x();
+  const double yaw = pitch_yaw.y();
   if (std::abs(pitch * 180.0 / M_PI) > 25.0 || std::abs(yaw * 180.0 / M_PI) > 15.0) {
     return false;
   }
@@ -139,7 +129,7 @@ bool VanishingPointCalibrator::updateFromUv(const std::vector<Vec2>& left_uv, co
   if (!left || !right)
     return false;
   if (left->m * right->m >= 0.0)
-    return false;  // not converging
+    return false;
   return updateFromLines(*left, *right, fx, fy, cx, cy);
 }
 

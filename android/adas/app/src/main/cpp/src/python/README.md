@@ -1,63 +1,36 @@
-# pyadas — C++ ADAS algorithms for Python (sim / bag visualizer)
+# pyadas — C++ ADAS for Python (sim / bag visualizer)
 
-Uses **`AdasApp` in Simulated mode** (same class as Android realtime app).
+Host path uses **`AdasApp` in Simulated mode**: publish inputs → `step` → `pop_messages`.
+Services stay inside the app (not exposed to Python). Output type identifies the source.
 
-## Services → topics (ZMQMessage → ZmqBridge → Android BagLogger)
-
-Single ZMQ pair (native binds):
-
-| Direction | Endpoint | Role |
-|-----------|----------|------|
-| IN | `tcp://127.0.0.1:5555` | external PUB → native SUB |
-| OUT | `tcp://127.0.0.1:5556` | native PUB → external SUB |
-
-Multipart: `[topic][ZMQMessage proto]`.
-
-| Service | Sub (internal) | Pub (via OUT) |
-|---------|----------------|---------------|
-| `TopicConvertService` | lanes/state/imu/gps/`lane_uv`/`model/camera_odometry` | typed path/chassis/imu/gps/uv/odom |
-| `ImuCalibService` | `vehicle/chassis`, `sensors/imu_raw` | `sensors/imu_yaw` |
-| `LaneKeepService` | `vehicle/chassis`, `vision/path` | `control/lane_keep`, `controls/steer` |
-| `LocalizationService` | chassis, gps, `sensors/imu_yaw` | `localization/pose` |
-| `CameraCalibService` | `model/camera_odometry` + chassis (+ optional `lane_uv`) | `calibration/camera` |
-
-**Live calib (Android/sim/bag — flowpilot):** only model pose → C++ `PoseCalibrator`
-(`calibrationd`: straight+fast → pitch/yaw from `atan2(trans)`). Java/Python publish
-`model/camera_odometry`; no Hough on device.
-
-**VP calib (host optional):** Hough/GT→UV → same `CameraCalibService.update_from_uv`.
-
-Android path: `VisionPipeline` → `vision/lanes` + `model/camera_odometry` → native.
-
-IMU path: `sensors/imu` → `imu_raw` → `ImuCalibService` (bias+R while &lt;0.5 km/h; apply while moving) → `imu_yaw` → `LocalizationService`.
-
-## PyAdasApp (sim / offline)
+## Host API
 
 ```python
-from pyadas import PyAdasApp
+from pyadas import AdasApp, LaneKeepOutput, LocalizationPose, CameraCalibrationState
 
-app = PyAdasApp(wheelbase=2.636, pitch0_deg=-6.0, camera_height=1.40)
+app = AdasApp(wheelbase=2.636, pitch0_deg=0.0, camera_height=1.40)
 app.set_camera_intrinsics(930, 930, 640, 360)
-app.publish_chassis_xy(t_us, speed_mps=10, steer_rad=0.01)
-app.publish_lanes_xy(t_us, [(1,0), (10,0.1), (30,0.2)])
-app.step(t_us)
-msgs = app.pop_messages()  # lane_keep / localization_pose / camera_calib
-```
 
-Aliases: `PyAdasPipeline` → `PyAdasApp`, `AdasPipeline` → `AdasApp`.
+app.publish_chassis(t_us, speed_mps=10, steer_rad=0.01)
+app.publish_lanes(t_us, [(1, 0), (10, 0.1), (30, 0.2)])
+app.publish_lane_uv(t_us, left_uv, right_uv)
+app.publish_gps(t_us, x, y)
+app.publish_imu(t_us, yaw_rate)
+app.step(t_us)
+
+for msg in app.pop_messages():
+    if isinstance(msg, LaneKeepOutput):
+        ...
+    elif isinstance(msg, LocalizationPose):
+        ...
+    elif isinstance(msg, CameraCalibrationState):
+        ...
+```
 
 ## Build (desktop)
 
-Из корня `programming/android/adas`:
-
 ```bash
-./app/src/main/cpp/scripts/build_cpp.sh -t linux --python
-# → app/src/main/scripts/pyadas/core*.so
-```
-
-## Run bag / sim (из корня проекта)
-
-```bash
-./run_bag_vis.sh /path/to/bag
-./run_sim.sh --controller pure_pursuit --show --lanes supercombo
+cd programming/android/adas/app/src/main/cpp
+cmake -B build-linux -DBUILD_FOR_ANDROID=OFF -DBUILD_PYTHON_BINDINGS=ON ...
+cmake --build build-linux -j --target core
 ```

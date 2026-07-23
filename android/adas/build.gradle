@@ -5,8 +5,6 @@ plugins {
     id 'com.google.protobuf' version '0.9.4' apply false
 }
 
-// Repositories are configured in settings.gradle
-
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

@@ -1,0 +1,54 @@
+# Android / Gradle
+.gradle/
+.idea/
+*.iml
+local.properties
+.cxx/
+.externalNativeBuild/
+captures/
+app/build/
+build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Native C++ (Conan / CMake)
+app/src/main/cpp/build/
+app/src/main/cpp/build-linux/
+app/src/main/cpp/build-android/
+app/src/main/cpp/CMakeUserPresets.json
+app/src/main/cpp/CMakePresets.json
+app/src/main/cpp/conanbuild.sh
+app/src/main/cpp/conanrun.sh
+app/src/main/cpp/conan_toolchain.cmake
+app/src/main/cpp/sbom.json
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/Makefile
+**/compile_commands.json
+app/src/main/scripts/proto/*
+app/src/main/scripts/vis/proto/*
+
+# Packaged / copied native libs (built by build_cpp.sh / gradle)
+app/libs/
+app/src/main/jniLibs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.so
+
+# MetaDrive / bag dump dirs (sim --out-dir, default "run")
+app/src/main/scripts/run/
+app/src/main/scripts/run_*/
+
+# Editor / OS
+*~
+*.swp
+.DS_Store
+.tools/

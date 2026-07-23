@@ -656,7 +656,7 @@ def process_imu_for_odometry(
             'rotation_angle_deg': float - угол поворота телефона
 
     Пример использования в visualizer:
-        from imu_utils import process_imu_for_odometry
+        from core.imu_utils import process_imu_for_odometry
 
         imu_processed = process_imu_for_odometry(imu_data, wheel_speed_data)
 

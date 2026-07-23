@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include "utils/adas_topics.h"
+
 namespace adas {
 namespace {
 
@@ -15,7 +17,6 @@ double softLaneProb(float p, float min_p)
   return std::min(1.0, (static_cast<double>(p) - min_p) / span);
 }
 
-/** Linear interp of y(x) on a sorted-ish sample grid; clamps at ends. */
 double interpY(double x, const std::vector<double>& xs, const std::vector<double>& ys)
 {
   if (xs.empty() || xs.size() != ys.size())
@@ -40,10 +41,12 @@ double interpY(double x, const std::vector<double>& xs, const std::vector<double
 LanePathMsg laneLinesToPath(const ai::flow::adas::LaneLines& ll, float min_lane_prob)
 {
   LanePathMsg out;
-  out.timestamp_us = ll.timestamp() * 1000;
+  const int64_t capture_ms = ll.capture_ts_ms() > 0 ? ll.capture_ts_ms() : ll.timestamp();
+  out.timestamp_us = capture_ms * 1000;
+  out.capture_ts_us = capture_ms * 1000;
+  out.infer_ts_us = ll.infer_ts_ms() > 0 ? ll.infer_ts_ms() * 1000 : 0;
   out.frame_id = ll.frame_id();
 
-  // --- base: best PLAN hypothesis ---
   const int np = std::min(ll.plan_x_size(), ll.plan_y_size());
   if (np >= 2) {
     out.polyline.reserve(static_cast<size_t>(np));
@@ -54,7 +57,6 @@ LanePathMsg laneLinesToPath(const ai::flow::adas::LaneLines& ll, float min_lane_
     }
   }
 
-  // Near lanes: 1=leftNear, 2=rightNear (Android ProtoUtils order), Y left.
   const int nx = ll.x_size();
   const bool geom_ok = nx >= 2;
   const bool have_l = geom_ok && ll.lanes_size() > 1 && ll.lanes(1).y_size() == nx;
@@ -62,16 +64,14 @@ LanePathMsg laneLinesToPath(const ai::flow::adas::LaneLines& ll, float min_lane_
 
   double l_prob = have_l ? softLaneProb(ll.lanes(1).prob(), min_lane_prob) : 0.0;
   double r_prob = have_r ? softLaneProb(ll.lanes(2).prob(), min_lane_prob) : 0.0;
-  // Stock OP: d_prob = l + r - l*r
+
   const double d_prob = l_prob + r_prob - l_prob * r_prob;
 
   if (d_prob <= 1e-6) {
-    // No usable lanes: plan only (or empty if plan missing).
     if (out.polyline.size() >= 2)
       return out;
   }
 
-  // Build lane sample grid for interp onto plan X.
   std::vector<double> xs;
   std::vector<double> lane_ys;
   if (d_prob > 1e-6 && (have_l || have_r)) {
@@ -82,17 +82,17 @@ LanePathMsg laneLinesToPath(const ai::flow::adas::LaneLines& ll, float min_lane_
       double yl = have_l ? ll.lanes(1).y(i) : 0.0;
       double yr = have_r ? ll.lanes(2).y(i) : 0.0;
       double lane_y;
+      // Device Y right-positive (flowpilot lane_planner): path = lll+w/2, rll-w/2.
       if (have_l && have_r) {
-        // Y-left: left > right; center from each side with clipped width (stock-style).
         const double width = std::abs(yl - yr);
         const double w = std::min(4.0, std::max(2.6, width));
-        const double from_l = yl - 0.5 * w;
-        const double from_r = yr + 0.5 * w;
+        const double from_l = yl + 0.5 * w;
+        const double from_r = yr - 0.5 * w;
         lane_y = (l_prob * from_l + r_prob * from_r) / (l_prob + r_prob + 1e-6);
       } else if (have_l) {
-        lane_y = yl - 1.6;  // ~half typical lane when only left visible
+        lane_y = yl + 1.6;
       } else {
-        lane_y = yr + 1.6;
+        lane_y = yr - 1.6;
       }
       xs.push_back(x);
       lane_ys.push_back(lane_y);
@@ -101,13 +101,12 @@ LanePathMsg laneLinesToPath(const ai::flow::adas::LaneLines& ll, float min_lane_
 
   if (!xs.empty() && out.polyline.size() >= 2) {
     for (auto& pt : out.polyline) {
-      const double y_lane = interpY(pt.x, xs, lane_ys);
-      pt.y = d_prob * y_lane + (1.0 - d_prob) * pt.y;
+      const double y_lane = interpY(pt.x(), xs, lane_ys);
+      pt.y() = d_prob * y_lane + (1.0 - d_prob) * pt.y();
     }
     return out;
   }
 
-  // No plan: fall back to lane mid / single-side path on ll.x grid.
   if (!xs.empty()) {
     out.polyline.clear();
     out.polyline.reserve(xs.size());
@@ -128,7 +127,7 @@ ChassisSample carStateToChassis(const ai::flow::adas::CarState& cs, double steer
   s.steering_angle_deg = cs.steering_angle_deg();
   s.steering_pressed = cs.steering_pressed();
   const double ratio = std::max(steer_ratio, 1e-3);
-  s.steer_rad = (s.steering_angle_deg * M_PI / 180.0) / ratio;
+  s.steer_rad = (cs.steering_angle_deg() * M_PI / 180.0) / ratio;
   return s;
 }
 
@@ -143,6 +142,20 @@ RawImuSample imuToRaw(const ai::flow::adas::IMUData& imu)
   s.gy = imu.gyro_y();
   s.gz = imu.gyro_z();
   s.valid = true;
+  return s;
+}
+
+CameraOdometrySample cameraOdometryToSample(const ai::flow::adas::CameraOdometry& odom)
+{
+  CameraOdometrySample s;
+  s.timestamp_us = odom.timestamp() * 1000;
+  for (int i = 0; i < 3; ++i) {
+    s.trans(i) = (i < odom.trans_size()) ? odom.trans(i) : 0.0;
+    s.rot(i) = (i < odom.rot_size()) ? odom.rot(i) : 0.0;
+    s.trans_std(i) = (i < odom.trans_std_size()) ? odom.trans_std(i) : 1.0;
+    s.rot_std(i) = (i < odom.rot_std_size()) ? odom.rot_std(i) : 1.0;
+  }
+  s.valid = odom.trans_size() >= 3 && odom.rot_size() >= 3;
   return s;
 }
 

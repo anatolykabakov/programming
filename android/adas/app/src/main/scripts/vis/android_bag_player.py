@@ -6,8 +6,8 @@ Supports:
   - .zip / .tar.gz archives of that layout
 
 Usage:
-  python3 android_bag_player.py /path/to/session --summary
-  python3 android_bag_player.py /path/to/session --topic vehicle/state
+  python3 vis/android_bag_player.py /path/to/session --summary
+  python3 vis/android_bag_player.py /path/to/session --topic vehicle/state
 """
 
 from __future__ import annotations

@@ -1,6 +1,5 @@
 #pragma once
 
-// bump this when changing the CAN packet
 #define CAN_PACKET_VERSION 4
 
 #define CANPACKET_HEAD_SIZE 6U
@@ -15,7 +14,7 @@
 typedef struct {
   unsigned char reserved : 1;
   unsigned char bus : 3;
-  unsigned char data_len_code : 4;  // lookup length with dlc_to_len
+  unsigned char data_len_code : 4;
   unsigned char rejected : 1;
   unsigned char returned : 1;
   unsigned char extended : 1;

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Trajectory visualization for Android ADAS bag sessions.
 
-Reads sessions via android_bag_player (topic__name/*.bin), same layout as
+Reads sessions via vis.android_bag_player (topic__name/*.bin), same layout as
 adas_bags/YYYY_MM_DD_HH_MM_SS.
 
 Usage:
-  python3 visualizer.py /path/to/2026_07_18_09_45_15
-  python3 visualizer.py /path/to/session.zip -o plots --plot-trajectory
+  python3 vis/visualizer.py /path/to/2026_07_18_09_45_15
+  python3 vis/visualizer.py /path/to/session.zip -o plots --plot-trajectory
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def extract_imu(player: AndroidBagPlayer) -> Optional[np.ndarray]:
 
 
 def extract_gps(player: AndroidBagPlayer) -> Optional[np.ndarray]:
-    """(N, 5): timestamp, lat, lon, alt, speed. Prefer sensors/gps/location."""
+    """(N, 6): timestamp, lat, lon, alt, speed, bearing_deg. Prefer sensors/gps/location."""
     topic = (
         "sensors/gps/location" if "sensors/gps/location" in player.topics else "sensors/gps/data"
     )
@@ -111,6 +111,7 @@ def extract_gps(player: AndroidBagPlayer) -> Optional[np.ndarray]:
         return None
     rows = []
     for ts, msg in player.get_topic_msgs(topic):
+        bearing = float(getattr(msg, "bearing", 0.0) or 0.0)
         rows.append(
             [
                 ts,
@@ -118,6 +119,7 @@ def extract_gps(player: AndroidBagPlayer) -> Optional[np.ndarray]:
                 float(msg.longitude),
                 float(msg.altitude),
                 float(msg.speed),
+                bearing,
             ]
         )
     return np.asarray(rows, dtype=np.float64) if rows else None

@@ -5,10 +5,6 @@
 
 namespace adas {
 
-/**
- * Flowpilot/openpilot ``PIDController`` (latcontrol) — P + I + feedforward.
- * Rate defaults to 50 Hz (HCA / chassis). Integrator unwinds on driver override.
- */
 class PidController {
 public:
   PidController(double k_p = 0.6, double k_i = 0.2, double k_f = 0.00006, double rate_hz = 50.0, double pos_limit = 1.0,
@@ -43,11 +39,10 @@ public:
     i_unwind_rate_ = 0.3 / r;
   }
 
-  /** @return clipped control in [neg_limit, pos_limit] (normalized torque). */
   double update(double error, double speed_mps = 0.0, bool override = false, double feedforward = 0.0,
                 bool freeze_integrator = false)
   {
-    (void)speed_mps;  // reserved for speed-scheduled gains
+    (void)speed_mps;
     p_ = error * k_p_;
     f_ = feedforward * k_f_;
     d_ = 0.0;
@@ -57,7 +52,7 @@ public:
     } else {
       const double i_new = i_ + error * k_i_ * i_rate_;
       const double control_try = p_ + i_new + d_ + f_;
-      // Anti-windup (flowpilot pid.py)
+
       if (((error >= 0.0 && (control_try <= pos_limit_ || i_new < 0.0)) ||
            (error <= 0.0 && (control_try >= neg_limit_ || i_new > 0.0))) &&
           !freeze_integrator) {
@@ -86,10 +81,6 @@ private:
   double control_ = 0;
 };
 
-/**
- * Flowpilot ``LatControlPID`` subset: desired vs actual steering-wheel angle [deg] → torque [-1,1].
- * Feedforward = desired_swa_deg * v² (same as ``get_steer_feedforward_default``).
- */
 class LatControlPid {
 public:
   LatControlPid(double k_p = 0.6, double k_i = 0.2, double k_f = 0.00006, double rate_hz = 50.0)
@@ -102,9 +93,9 @@ public:
   void setGains(double k_p, double k_i, double k_f) { pid_.setGains(k_p, k_i, k_f); }
 
   struct Result {
-    double steer_norm = 0.0;     // actuators.steer ∈ [-1, 1]
-    double angle_des_deg = 0.0;  // desired SWA
-    double angle_act_deg = 0.0;  // measured SWA
+    double steer_norm = 0.0;
+    double angle_des_deg = 0.0;
+    double angle_act_deg = 0.0;
     double angle_error_deg = 0.0;
     double p = 0, i = 0, f = 0;
     bool active = false;
@@ -120,7 +111,7 @@ public:
       pid_.reset();
       return r;
     }
-    // Offset does not contribute to resistive torque (flowpilot).
+
     const double ff = desired_swa_deg * v_ego_mps * v_ego_mps;
     r.steer_norm = pid_.update(r.angle_error_deg, v_ego_mps, steering_pressed, ff);
     r.p = pid_.p();
