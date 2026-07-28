@@ -107,9 +107,8 @@ int main()
   }  // Bar2 не вызывается -- утечка!!
 
   auto fclose_del = [](FILE* f) {
-    if (f) {
+    if (f)
       fclose(f);
-    }
   };
   std::unique_ptr<FILE, decltype(fclose_del)> uf(fopen("a.txt", "r"), fclose_del);
 }
