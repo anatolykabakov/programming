@@ -46,10 +46,18 @@ def build_linear_system(odom, obs):
         B = edge.B
         OMEGA = edge.OMEGA
 
-        H[id1 : id1 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(np.multiply(A.T, OMEGA), A)
-        H[id1 : id1 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(np.multiply(A.T, OMEGA), B)
-        H[id2 : id2 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(np.multiply(B.T, OMEGA), A)
-        H[id2 : id2 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(np.multiply(B.T, OMEGA), B)
+        H[id1 : id1 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(
+            np.multiply(A.T, OMEGA), A
+        )
+        H[id1 : id1 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(
+            np.multiply(A.T, OMEGA), B
+        )
+        H[id2 : id2 + STATE_SIZE, id1 : id1 + STATE_SIZE] += np.multiply(
+            np.multiply(B.T, OMEGA), A
+        )
+        H[id2 : id2 + STATE_SIZE, id2 : id2 + STATE_SIZE] += np.multiply(
+            np.multiply(B.T, OMEGA), B
+        )
 
         b[id1 : id1 + STATE_SIZE] += np.multiply(np.multiply(A.T, OMEGA), edge.e)
         b[id2 : id2 + STATE_SIZE] += np.multiply(np.multiply(B.T, OMEGA), edge.e)

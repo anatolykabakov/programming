@@ -34,7 +34,9 @@ def v2t(v):
     theta = v[2]
     x = v[0]
     y = v[1]
-    A = np.array([[np.cos(theta), -np.sin(theta), x], [np.sin(theta), np.cos(theta), y], [0, 0, 1]])
+    A = np.array(
+        [[np.cos(theta), -np.sin(theta), x], [np.sin(theta), np.cos(theta), y], [0, 0, 1]]
+    )
     return A
 
 
@@ -152,7 +154,9 @@ def optimize(x, z, tolerance):
 
 
 if __name__ == "__main__":
-    x_true = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]])
+    x_true = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
+    )
     x = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.5, 0.0, 0.0], [2.0, 0.0, 0.0]])
     z = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     tolerance = 0.01

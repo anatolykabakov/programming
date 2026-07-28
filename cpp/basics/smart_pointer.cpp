@@ -93,7 +93,7 @@ int main()
     auto b = std::make_shared<NodeBad>();  // use_count = 1
     a->next = b;                           // a 1 b 2
     b->next = a;                           // a 2 b 2
-  }                                        // A 1 B 1 не уничтаются --> учетчка!!!
+  }  // A 1 B 1 не уничтаются --> учетчка!!!
 
   {
     auto a = std::make_shared<NodeGood>();
@@ -107,9 +107,8 @@ int main()
   }  // Bar2 не вызывается -- утечка!!
 
   auto fclose_del = [](FILE* f) {
-    if (f) {
+    if (f)
       fclose(f);
-    }
   };
   std::unique_ptr<FILE, decltype(fclose_del)> uf(fopen("a.txt", "r"), fclose_del);
 }

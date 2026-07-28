@@ -19,12 +19,16 @@ def calibrate_extrinsics(img, intrinsics, board_3d, pattern_params, undistord):
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    ret, corners = cv2.findChessboardCorners(gray, (chessboard_rows, chessboard_cols), None)
+    ret, corners = cv2.findChessboardCorners(
+        gray, (chessboard_rows, chessboard_cols), None
+    )
 
     if ret:
         board_2d = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
         # Find the rotation and translation vectors.
-        ret, rotation_vector, translation_vector = cv2.solvePnP(board_3d, board_2d, mtx, new_dist)
+        ret, rotation_vector, translation_vector = cv2.solvePnP(
+            board_3d, board_2d, mtx, new_dist
+        )
 
         rotation_mat = np.zeros(shape=(3, 3))
         R = cv2.Rodrigues(rotation_vector, rotation_mat)[0]
@@ -76,10 +80,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "image", type=str, default="chessboard", help="path to images to calibrations"
     )
-    parser.add_argument("--width", type=int, default=7, help="width of chessboard in squares")
+    parser.add_argument(
+        "--width", type=int, default=7, help="width of chessboard in squares"
+    )
 
-    parser.add_argument("--height", type=int, default=6, help="width of chessboard in squares")
-    parser.add_argument("--square-size", type=int, default=30, help="Size of square in mm")
+    parser.add_argument(
+        "--height", type=int, default=6, help="width of chessboard in squares"
+    )
+    parser.add_argument(
+        "--square-size", type=int, default=30, help="Size of square in mm"
+    )
     parser.add_argument("--rows", type=int, default=7, help="")
     parser.add_argument("--cols", type=int, default=6, help="")
 

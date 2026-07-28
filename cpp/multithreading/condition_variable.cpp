@@ -69,7 +69,7 @@ public:
   void PlayStarcraft()
   {
     while (Security::SectorClear())
-      ;          //Играем! :)
+      ;          // Играем! :)
     WorkHard();  // Работаем :(
   }
 };

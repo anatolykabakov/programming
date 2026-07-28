@@ -69,7 +69,9 @@ if __name__ == "__main__":
         default="chessboard/intrinsics.json",
         help="path to intrinsics calibration",
     )
-    parser.add_argument("--square-size", type=float, default=30, help="Size of square in mm")
+    parser.add_argument(
+        "--square-size", type=float, default=30, help="Size of square in mm"
+    )
     parser.add_argument("--rows", type=int, default=7, help="")
     parser.add_argument("--cols", type=int, default=6, help="")
 

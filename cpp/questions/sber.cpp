@@ -23,7 +23,7 @@ int main()
   try {
     auto s1 = std::shared_ptr<MyClass>(c);  // count 1
     auto s2 = std::shared_ptr<MyClass>(c);  // count 1
-  }                                         // s1 удалит указатель.
+  }  // s1 удалит указатель.
   catch (...) {
   }
   return 0;

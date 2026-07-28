@@ -4,7 +4,7 @@
 
 class Bot : public IPlayer {
 public:
-  Bot(){};
+  Bot() {};
 
   void move(Board& board);
 

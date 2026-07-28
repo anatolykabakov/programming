@@ -1,8 +1,7 @@
 #include <iostream>
 
 template <typename... U>
-struct tuple {
-};
+struct tuple {};
 
 void g(int a, float b, char c) { std::cout << a << " " << b << " " << c << std::endl; }
 
