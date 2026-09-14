@@ -8,7 +8,9 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
-*build*
+
+build/
+**/cmake-build-*/
 # /captures
 # .externalNativeBuild
 .cxx
@@ -17,10 +19,10 @@ local.properties
 *android/adas/app/src/main/cpp/build/*
 *android/adas/app/build/*
 *android/adas/app/libs/*
+*android/adas/.tools/*
 *.log
 *.pyc
-*.txt
-*.png
+# *.png
 *.xml
 *.bin
 *.yml

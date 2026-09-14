@@ -37,7 +37,7 @@ Checks: >-
 
 WarningsAsErrors: '*'
 HeaderFilterRegex: ''
-AnalyzeTemporaryDtors: false
+# AnalyzeTemporaryDtors: false
 FormatStyle:     google
 
 CheckOptions:

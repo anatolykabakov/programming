@@ -13,7 +13,7 @@ void SFM::run()
 
     tracker_->filter(relative.essMask);
 
-    double scale = 1.;// getOdomScale(config_.gt[i].translation(), config_.gt[i - 1].translation());
+    double scale = 1.;  // getOdomScale(config_.gt[i].translation(), config_.gt[i - 1].translation());
 
     if (scale > config_.scaleThreshold && relative.pose.translation().z() > relative.pose.translation().x() &&
         relative.pose.translation().z() > relative.pose.translation().y()) {

@@ -39,64 +39,41 @@ static double RMSE(const openMVG::sfm::SfM_Data& sfm_data)
 }
 
 /// Triangulate a given set of observations
-bool track_triangulation
-(
-  const openMVG::sfm::SfM_Data & sfm_data,
-  const openMVG::sfm::Observations & obs,
-  openMVG::Vec3 & X,
-  const openMVG::ETriangulationMethod & etri_method = openMVG::ETriangulationMethod::DEFAULT
-)
+bool track_triangulation(const openMVG::sfm::SfM_Data& sfm_data, const openMVG::sfm::Observations& obs,
+                         openMVG::Vec3& X,
+                         const openMVG::ETriangulationMethod& etri_method = openMVG::ETriangulationMethod::DEFAULT)
 {
-  if (obs.size() >= 2)
-  {
+  if (obs.size() >= 2) {
     std::vector<openMVG::Vec3> bearing;
     std::vector<openMVG::Mat34> poses;
     std::vector<openMVG::sfm::Pose3> poses_;
     bearing.reserve(obs.size());
     poses.reserve(obs.size());
-    for (const auto& observation : obs)
-    {
-      const openMVG::sfm::View * view = sfm_data.views.at(observation.first).get();
+    for (const auto& observation : obs) {
+      const openMVG::sfm::View* view = sfm_data.views.at(observation.first).get();
       if (!sfm_data.IsPoseAndIntrinsicDefined(view))
         return false;
-      const openMVG::cameras::IntrinsicBase * cam = sfm_data.GetIntrinsics().at(view->id_intrinsic).get();
+      const openMVG::cameras::IntrinsicBase* cam = sfm_data.GetIntrinsics().at(view->id_intrinsic).get();
       const openMVG::sfm::Pose3 pose = sfm_data.GetPoseOrDie(view);
       bearing.emplace_back((*cam)(cam->get_ud_pixel(observation.second.x)));
       poses.emplace_back(pose.asMatrix());
       poses_.emplace_back(pose);
     }
-    if (bearing.size() > 2)
-    {
+    if (bearing.size() > 2) {
       const Eigen::Map<const openMVG::Mat3X> bearing_matrix(bearing[0].data(), 3, bearing.size());
       openMVG::Vec4 Xhomogeneous;
-      if (openMVG::TriangulateNViewAlgebraic
-      (
-        bearing_matrix,
-        poses,
-        &Xhomogeneous))
-      {
+      if (openMVG::TriangulateNViewAlgebraic(bearing_matrix, poses, &Xhomogeneous)) {
         X = Xhomogeneous.hnormalized();
         return true;
       }
-    }
-    else
-    {
-      return openMVG::Triangulate2View
-      (
-        poses_.front().rotation(),
-        poses_.front().translation(),
-        bearing.front(),
-        poses_.back().rotation(),
-        poses_.back().translation(),
-        bearing.back(),
-        X,
-        etri_method
-      );
+    } else {
+      return openMVG::Triangulate2View(poses_.front().rotation(), poses_.front().translation(), bearing.front(),
+                                       poses_.back().rotation(), poses_.back().translation(), bearing.back(), X,
+                                       etri_method);
     }
   }
   return false;
 }
-
 
 void Mapping::filter()
 {
@@ -129,7 +106,8 @@ void Mapping::update(const Eigen::Isometry3d& relative, const Eigen::Isometry3d&
                      const std::vector<cv::Point2f> prevFeatures, const std::vector<cv::Point2f> currentFeatures,
                      const std::vector<int> indexes, int poseId)
 {
-  scene_.views[poseId] = std::make_shared<openMVG::sfm::View>("", poseId, 0, poseId, scene_.intrinsics[0]->w(), scene_.intrinsics[0]->h());
+  scene_.views[poseId] =
+      std::make_shared<openMVG::sfm::View>("", poseId, 0, poseId, scene_.intrinsics[0]->w(), scene_.intrinsics[0]->h());
 
   scene_.poses[poseId] =
       openMVG::geometry::Pose3(currentPose.linear(), -currentPose.linear().inverse() * currentPose.translation());

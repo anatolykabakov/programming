@@ -85,10 +85,10 @@ if __name__ == "__main__":
     z = np.array([[1.0], [1.0], [1.0]])
     tolerance = 0.01
 
-    plt.plot(x, np.zeros(x.shape), '.', markersize=20, label='init guess')
+    plt.plot(x, np.zeros(x.shape), ".", markersize=20, label="init guess")
     x_opt = optimize(x, z, tolerance)
     print(x_opt)
 
-    plt.plot(xTrue, np.zeros(xTrue.shape), '.', markersize=20, label='Ground truth')
-    plt.plot(x_opt, np.zeros(x_opt.shape), '.', markersize=20, label='estimate')
+    plt.plot(xTrue, np.zeros(xTrue.shape), ".", markersize=20, label="Ground truth")
+    plt.plot(x_opt, np.zeros(x_opt.shape), ".", markersize=20, label="estimate")
     plt.show()
